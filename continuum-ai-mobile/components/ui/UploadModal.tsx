@@ -28,6 +28,7 @@ import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { BorderRadius, Spacing } from '../../constants/theme';
 import { healthApi } from '../../api/health';
+import { showToast } from '../../store/toastStore';
 import { useHealthStore } from '../../store/healthStore';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -182,7 +183,6 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
   const [mode, setMode] = useState<UploadMode>('menu');
   const [noteText, setNoteText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [toast, setToast] = useState(false);
 
   // Sheet slide animation
   const translateY = useSharedValue(MODAL_HEIGHT);
@@ -212,11 +212,6 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
     );
   }, [onClose]);
 
-  const showToast = () => {
-    setToast(true);
-    setTimeout(() => setToast(false), 2500);
-  };
-
   const handleSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ['health', 'timeline'] });
     queryClient.invalidateQueries({ queryKey: ['insights'] });
@@ -224,7 +219,7 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setTimeout(() => {
       handleClose();
-      showToast();
+      showToast('Data added — analysing…', 'info');
     }, 1500);
   };
 
@@ -307,9 +302,6 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
 
   return (
     <>
-      {/* Toast — rendered outside modal so it sits above everything */}
-      <Toast message="Data added — analysing…" visible={toast} />
-
       <Modal
         visible={visible}
         transparent
