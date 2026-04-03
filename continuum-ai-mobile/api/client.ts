@@ -1,7 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { ENV } from '../constants/env';
 import { useAuthStore } from '../store/authStore';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.continuumai.app/v1';
+const API_URL = ENV.apiUrl;
 
 export const apiClient = axios.create({
   baseURL: API_URL,

@@ -1,0 +1,21 @@
+{
+  "name": "Continuum — Health Intelligence",
+  "subtitle": "Your personal health OS",
+  "description": "Continuum is a personal health intelligence system that understands your health data, tracks it over time, and tells you what to do next.\n\nUpload lab reports, describe symptoms, and chat with an AI that actually knows your health history. Get proactive insights before problems grow. Know which specialist to see and when.\n\nFeatures:\n• AI-powered health analysis from your reports and symptoms\n• Proactive health insights with severity indicators\n• Complete health timeline with trend tracking\n• Specialist recommendations based on your data\n• Dual engine: rule-based safety + LLM intelligence\n• Secure, private — your data never leaves your control",
+  "keywords": [
+    "health", "AI health", "personal health", "lab results",
+    "health tracker", "medical AI", "symptoms", "health insights",
+    "health intelligence", "wellness"
+  ],
+  "supportUrl": "https://continuum-health.app/support",
+  "marketingUrl": "https://continuum-health.app",
+  "privacyPolicyUrl": "https://continuum-health.app/privacy",
+  "categories": {
+    "primary": "Medical",
+    "secondary": "Health & Fitness"
+  },
+  "ageRating": "4+",
+  "appStoreConnect": {
+    "reviewNotes": "Test account: demo@continuum-health.app / Demo1234!\nThe app uses AI to analyze health data. Backend API is live at https://api.continuum-health.app\nAll AI responses include medical disclaimers. No actual medical advice is provided."
+  }
+}

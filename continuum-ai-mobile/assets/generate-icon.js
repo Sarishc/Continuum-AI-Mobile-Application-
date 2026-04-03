@@ -80,3 +80,27 @@ console.log('✓ icon.png + adaptive-icon.png written');
 const splash = drawSplash();
 fs.writeFileSync(path.join(outDir, 'splash.png'), splash.toBuffer('image/png'));
 console.log('✓ splash.png written');
+
+// ─── Notification icon (Android: white on transparent, 96×96) ─────────────────
+
+function generateNotificationIcon() {
+  const size = 96;
+  const canvas = createCanvas(size, size);
+  const ctx = canvas.getContext('2d');
+
+  // Transparent background
+  ctx.clearRect(0, 0, size, size);
+
+  // White "C" letterform
+  ctx.font = `${size * 0.58}px serif`;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('C', size / 2, size / 2 + size * 0.02);
+
+  return canvas;
+}
+
+const notif = generateNotificationIcon();
+fs.writeFileSync(path.join(outDir, 'notification-icon.png'), notif.toBuffer('image/png'));
+console.log('✓ notification-icon.png written');

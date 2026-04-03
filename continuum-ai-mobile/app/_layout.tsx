@@ -14,7 +14,7 @@ import {
 import { DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../store/authStore';
-import { registerForPushNotifications } from '../services/notifications';
+import { registerForPushNotifications, useNotificationTap } from '../services/notifications';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Toast } from '../components/ui/Toast';
 import { Colors } from '../constants/colors';
@@ -82,7 +82,6 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Authenticated user — check onboarding
     if (!onboardingComplete) {
       if (!inOnboardingGroup) router.replace('/onboarding');
       return;
@@ -117,6 +116,9 @@ export default function RootLayout() {
     DMSerifDisplay_400Regular,
   });
 
+  // Handle notification taps → deep link to correct screen
+  useNotificationTap();
+
   useEffect(() => {
     hydrate();
   }, []);
@@ -146,6 +148,8 @@ export default function RootLayout() {
                 <Stack.Screen name="(auth)" />
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="onboarding" />
+                <Stack.Screen name="+not-found" />
+                <Stack.Screen name="privacy" />
                 <Stack.Screen name="index" />
               </Stack>
             </AuthGuard>

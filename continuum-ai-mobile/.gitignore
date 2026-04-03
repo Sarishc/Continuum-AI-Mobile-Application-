@@ -39,3 +39,17 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Environment secrets
+.env.production
+.env.staging
+
+# Google / Apple credentials
+google-services.json
+google-services-key.json
+*.p8
+*.p12
+*.mobileprovision
+
+# EAS
+.eas/

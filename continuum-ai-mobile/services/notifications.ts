@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { useEffect } from 'react';
+import { useRouter } from 'expo-router';
 
 // ─── Global notification handler ─────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ Notifications.setNotificationHandler({
 // ─── Permission + token registration ─────────────────────────────────────────
 
 export async function registerForPushNotifications(): Promise<string | null> {
-  if (!Device.isDevice) return null; // won't work in simulator
+  if (!Device.isDevice) return null;
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
@@ -42,19 +43,23 @@ export async function registerForPushNotifications(): Promise<string | null> {
 export async function scheduleLocalNotification(
   title: string,
   body: string,
-  seconds: number = 1
+  seconds: number = 1,
+  data?: Record<string, string>
 ): Promise<void> {
   try {
     await Notifications.scheduleNotificationAsync({
-      content: { title, body, sound: true },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds },
+      content: { title, body, sound: true, data: data ?? {} },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds,
+      },
     });
   } catch {
-    // Notifications not available in this environment — fail silently
+    // Fail silently — simulator / no permission
   }
 }
 
-// ─── Foreground notification listener hook ───────────────────────────────────
+// ─── Foreground notification listener ────────────────────────────────────────
 
 export function useNotificationListener(
   onReceived?: (notification: Notifications.Notification) => void
@@ -65,4 +70,26 @@ export function useNotificationListener(
     });
     return () => sub.remove();
   }, [onReceived]);
+}
+
+// ─── Notification tap → deep link ─────────────────────────────────────────────
+
+export function useNotificationTap() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as
+        | Record<string, string>
+        | undefined;
+      const screen = data?.screen;
+      if (screen) {
+        // Small delay so navigation is ready after cold start
+        setTimeout(() => {
+          router.push(screen as Parameters<typeof router.push>[0]);
+        }, 300);
+      }
+    });
+    return () => sub.remove();
+  }, [router]);
 }
