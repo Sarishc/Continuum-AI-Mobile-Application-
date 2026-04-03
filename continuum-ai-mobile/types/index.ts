@@ -96,19 +96,67 @@ export interface Insight {
   generatedAt: string;
 }
 
+// ─── Chat Messages ────────────────────────────────────────────────────────────
+
+export type ConfidenceLevel = 'low' | 'medium' | 'high';
+export type EngineMode = 'rule' | 'ai';
+
+export interface ChatAttachment {
+  name: string;
+  type: string; // mime type
+  uri: string;
+}
+
+export interface SpecialistRecommendation {
+  type: string;
+  reason: string;
+  urgency: 'routine' | 'soon' | 'urgent' | 'emergency';
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string; // ISO string
+  // AI-response extras
+  confidence?: ConfidenceLevel;
+  confidenceScore?: number;
+  reasoning?: string;
+  disclaimer?: string;
+  specialist?: SpecialistRecommendation;
+  // User-message extras
+  attachment?: ChatAttachment;
+  // UI state (not persisted to API)
+  reasoningExpanded?: boolean;
+}
+
+export interface AIAskResponse {
+  answer: string;
+  reasoning: string;
+  confidence: ConfidenceLevel;
+  confidence_score: number;
+  disclaimer: string;
+  specialist_recommendation?: {
+    specialist_type: string;
+    reason: string;
+    urgency: 'routine' | 'soon' | 'urgent';
+  };
+}
+
 // ─── Conversations ────────────────────────────────────────────────────────────
 
 export interface Conversation {
   id: string;
   userId: string;
   title: string;
-  messages: Message[];
+  messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
 }
 
 export type MessageRole = 'user' | 'assistant' | 'system';
 
+/** Legacy Message type kept for API layer compatibility */
 export interface Message {
   id: string;
   conversationId: string;
