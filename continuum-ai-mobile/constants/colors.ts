@@ -50,6 +50,7 @@ export const Gradients = {
   gradientCritical: ['#FF4F6B', '#E03050'] as [string, string],
   gradientGlass: ['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)'] as [string, string],
   gradientDepth: ['#0A0B0F', '#050508'] as [string, string],
+  gradientCaution: ['#FFB547', '#E09A30'] as [string, string],
 } as const;
 
 // ─── Flat Colors export (backward-compat + convenience) ───────────────────────

@@ -34,7 +34,7 @@ function urgencyColor(urgency: string): string {
   switch (urgency) {
     case 'emergency': return Colors.critical;
     case 'urgent':    return Colors.critical;
-    case 'soon':      return Colors.warning;
+    case 'soon':      return Colors.caution;
     default:          return Colors.primary;
   }
 }
@@ -185,12 +185,32 @@ export function SpecialistDetailSheet({
         {/* Reason */}
         <Text style={styles.reason}>{specialist.reason}</Text>
 
+        {/* 3-step urgency indicator */}
+        <View style={styles.urgencyTrack}>
+          {(['routine', 'soon', 'urgent'] as const).map((level, i) => {
+            const levels = ['routine', 'soon', 'urgent', 'emergency'];
+            const activeIdx = levels.indexOf(specialist.urgency);
+            const isActive = i <= (activeIdx === 3 ? 2 : activeIdx);
+            const color = isActive ? accentColor : Colors.border;
+            return (
+              <React.Fragment key={level}>
+                <View style={[styles.urgencyStep, { backgroundColor: color }]}>
+                  <Text style={[styles.urgencyStepText, { color: isActive ? '#fff' : Colors.textMuted }]}>
+                    {i + 1}
+                  </Text>
+                </View>
+                {i < 2 && <View style={[styles.urgencyConnector, { backgroundColor: i < activeIdx ? accentColor : Colors.border }]} />}
+              </React.Fragment>
+            );
+          })}
+        </View>
+
         {/* What to expect */}
         <Text style={styles.sectionLabel}>WHAT TO EXPECT</Text>
         <View style={styles.bullets}>
           {bullets.map((b, i) => (
             <View key={i} style={styles.bulletRow}>
-              <View style={styles.bulletDot} />
+              <Text style={[styles.bulletNum, { color: accentColor }]}>{i + 1}</Text>
               <Text style={styles.bulletText}>{b}</Text>
             </View>
           ))}
@@ -203,7 +223,7 @@ export function SpecialistDetailSheet({
           style={styles.ctaWrap}
         >
           <LinearGradient
-            colors={Colors.gradientBlue}
+            colors={Colors.gradientElectric}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.ctaGradient}
@@ -255,7 +275,7 @@ const styles = StyleSheet.create({
   urgencyText: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyMedium },
   specialistName: {
     fontSize: FontSize['3xl'],
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
     lineHeight: 36,
   },
@@ -279,14 +299,27 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     letterSpacing: 1,
   },
+  urgencyTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: -Spacing[1],
+  },
+  urgencyStep: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  urgencyStepText: { fontSize: FontSize.xs, fontFamily: FontFamily.bodySemiBold },
+  urgencyConnector: { flex: 1, height: 2, borderRadius: 1 },
   bullets: { gap: Spacing[3] },
   bulletRow: { flexDirection: 'row', gap: Spacing[3], alignItems: 'flex-start' },
-  bulletDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.primary,
-    marginTop: 7,
+  bulletNum: {
+    width: 18,
+    fontSize: FontSize.xs,
+    fontFamily: FontFamily.displaySemiBold,
+    marginTop: 2,
     flexShrink: 0,
   },
   bulletText: {

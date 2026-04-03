@@ -54,7 +54,7 @@ function DocumentIcon({ color = Colors.primary }: { color?: string }) {
   );
 }
 
-function SymptomIcon({ color = Colors.warning }: { color?: string }) {
+function SymptomIcon({ color = Colors.caution }: { color?: string }) {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path
@@ -68,7 +68,7 @@ function SymptomIcon({ color = Colors.warning }: { color?: string }) {
   );
 }
 
-function NoteIcon({ color = Colors.accent }: { color?: string }) {
+function NoteIcon({ color = Colors.positive }: { color?: string }) {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path
@@ -92,8 +92,8 @@ function NoteIcon({ color = Colors.accent }: { color?: string }) {
 function CheckCircleIcon() {
   return (
     <Svg width={52} height={52} viewBox="0 0 24 24" fill="none">
-      <Circle cx="12" cy="12" r="10" stroke={Colors.accent} strokeWidth={1.8} />
-      <Path d="M8 12L11 15L16 9" stroke={Colors.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx="12" cy="12" r="10" stroke={Colors.positive} strokeWidth={1.8} />
+      <Path d="M8 12L11 15L16 9" stroke={Colors.positive} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }

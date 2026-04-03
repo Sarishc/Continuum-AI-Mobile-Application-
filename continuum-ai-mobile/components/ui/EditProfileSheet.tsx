@@ -473,7 +473,7 @@ export function EditProfileSheet({ visible, onClose }: EditProfileSheetProps) {
         <View style={sheetStyles.footer}>
           <TouchableOpacity onPress={handleSave} disabled={saving} activeOpacity={0.85} style={sheetStyles.saveBtnWrap}>
             <LinearGradient
-              colors={Colors.gradientBlue}
+              colors={Colors.gradientElectric}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={sheetStyles.saveBtn}

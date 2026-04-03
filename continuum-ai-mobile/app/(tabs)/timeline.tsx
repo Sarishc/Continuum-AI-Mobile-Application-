@@ -58,33 +58,33 @@ interface EntryTypeConfig {
 
 const ENTRY_TYPE_CONFIG: Record<HealthEntryType, EntryTypeConfig> = {
   lab_result: {
-    color: Colors.primary,
-    bg: 'rgba(56, 139, 253, 0.12)',
+    color: Colors.electric,
+    bg: Colors.electricMist,
     label: 'Lab Result',
   },
   symptom: {
-    color: Colors.warning,
-    bg: 'rgba(210, 153, 34, 0.12)',
+    color: Colors.caution,
+    bg: Colors.cautionGlow,
     label: 'Symptom',
   },
   appointment: {
-    color: Colors.purple,
-    bg: 'rgba(188, 140, 255, 0.12)',
+    color: Colors.insight,
+    bg: Colors.insightGlow,
     label: 'Appointment',
   },
   medication: {
-    color: Colors.accent,
-    bg: 'rgba(63, 185, 80, 0.12)',
+    color: Colors.positive,
+    bg: Colors.positiveGlow,
     label: 'Medication',
   },
   vital: {
-    color: '#FF9500',
-    bg: 'rgba(255, 149, 0, 0.12)',
+    color: '#FF9F47',
+    bg: 'rgba(255,159,71,0.12)',
     label: 'Vital',
   },
   note: {
-    color: Colors.textSecondary,
-    bg: 'rgba(139, 148, 158, 0.12)',
+    color: Colors.textTertiary,
+    bg: 'rgba(92,99,132,0.12)',
     label: 'Note',
   },
 };
@@ -559,19 +559,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[5],
     paddingTop: Spacing[4],
     paddingBottom: Spacing[3],
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.display,
+    fontSize: 28,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
+    lineHeight: 34,
   },
   headerSub: {
     fontSize: FontSize.sm,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textSecondary,
-    marginTop: 2,
+    marginTop: 3,
   },
 
   // ── Filters
@@ -699,7 +698,7 @@ const styles = StyleSheet.create({
   },
   cardValue: {
     fontSize: FontSize.xl,
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
   },
   cardUnit: {

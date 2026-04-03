@@ -152,25 +152,33 @@ interface EngineToggleProps {
   onChange: (mode: EngineMode) => void;
 }
 
+function EngineCard({ active, label, subtitle, color, onPress }: {
+  active: boolean; label: string; subtitle: string; color: string; onPress: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const cardStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <TouchableOpacity
+      onPress={() => {
+        scale.value = withSequence(withTiming(0.96, { duration: 80 }), withSpring(1, { damping: 15 }));
+        onPress();
+      }}
+      activeOpacity={1}
+    >
+      <Animated.View style={[toggleStyles.card, active && { borderColor: color, backgroundColor: `${color}14` }, cardStyle]}>
+        <View style={[toggleStyles.cardDot, { backgroundColor: active ? color : Colors.textMuted }]} />
+        <View style={toggleStyles.cardText}>
+          <Text style={[toggleStyles.cardLabel, active && { color }]}>{label}</Text>
+          <Text style={toggleStyles.cardSub}>{subtitle}</Text>
+        </View>
+        {active && <View style={[toggleStyles.activePip, { backgroundColor: color }]} />}
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
 function EngineToggle({ mode, onChange }: EngineToggleProps) {
-  const slideX = useSharedValue(mode === 'rule' ? 0 : 1);
-
-  useEffect(() => {
-    slideX.value = withSpring(mode === 'rule' ? 0 : 1, {
-      damping: 18,
-      stiffness: 260,
-    });
-  }, [mode]);
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX: interpolate(slideX.value, [0, 1], [0, 88]),
-      },
-    ],
-    backgroundColor: mode === 'rule' ? Colors.warning : Colors.primary,
-  }));
-
   const handlePress = (next: EngineMode) => {
     if (next === mode) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -178,72 +186,53 @@ function EngineToggle({ mode, onChange }: EngineToggleProps) {
   };
 
   return (
-    <View style={toggleStyles.container}>
-      {/* Sliding background pill */}
-      <Animated.View style={[toggleStyles.indicator, indicatorStyle]} />
-
-      <TouchableOpacity
+    <View style={toggleStyles.row}>
+      <EngineCard
+        active={mode === 'rule'}
+        label="Rule Engine"
+        subtitle="Deterministic"
+        color={Colors.caution}
         onPress={() => handlePress('rule')}
-        activeOpacity={0.8}
-        style={toggleStyles.option}
-      >
-        <Text style={[toggleStyles.optionText, mode === 'rule' && toggleStyles.activeText]}>
-          Rule Engine
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
+      />
+      <EngineCard
+        active={mode === 'ai'}
+        label="AI Mode"
+        subtitle="Generative"
+        color={Colors.electric}
         onPress={() => handlePress('ai')}
-        activeOpacity={0.8}
-        style={toggleStyles.option}
-      >
-        <Text style={[toggleStyles.optionText, mode === 'ai' && toggleStyles.activeText]}>
-          AI Mode
-        </Text>
-      </TouchableOpacity>
+      />
     </View>
   );
 }
 
 const toggleStyles = StyleSheet.create({
-  container: {
+  row: { flexDirection: 'row', gap: Spacing[2], paddingHorizontal: Spacing[4], paddingBottom: Spacing[3] },
+  card: {
+    flex: 1,
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[2],
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: BorderRadius.full,
-    padding: 4,
-    position: 'relative',
-    width: 192,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing[3],
+    paddingVertical: Spacing[2],
   },
-  indicator: {
-    position: 'absolute',
-    top: 4,
-    left: 4,
-    width: 88,
-    height: 28,
-    borderRadius: BorderRadius.full,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4 },
-      android: { elevation: 3 },
-    }),
-  },
-  option: {
-    width: 88,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  optionText: {
+  cardDot: { width: 8, height: 8, borderRadius: 4 },
+  cardText: { flex: 1 },
+  cardLabel: {
     fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
+    fontFamily: FontFamily.bodySemiBold,
     color: Colors.textSecondary,
   },
-  activeText: {
-    color: '#FFFFFF',
-    fontFamily: FontFamily.bodySemiBold,
+  cardSub: {
+    fontSize: 10,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    marginTop: 1,
   },
+  activePip: { width: 5, height: 5, borderRadius: 2.5 },
 });
 
 
@@ -273,21 +262,43 @@ function TypingDot({ delay }: { delay: number }) {
   return <Animated.View style={[typingStyles.dot, style]} />;
 }
 
+function ScanLine() {
+  const translateX = useSharedValue(-80);
+  useEffect(() => {
+    translateX.value = withRepeat(
+      withSequence(
+        withTiming(80, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+        withTiming(-80, { duration: 0 })
+      ),
+      -1,
+      false
+    );
+  }, []);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+  return (
+    <View style={typingStyles.scanTrack}>
+      <Animated.View style={[typingStyles.scanLine, style]} />
+    </View>
+  );
+}
+
 function TypingIndicator() {
   return (
     <Animated.View entering={FadeInLeft.duration(250)} style={typingStyles.bubble}>
-      <TypingDot delay={0} />
-      <TypingDot delay={200} />
-      <TypingDot delay={400} />
+      <View style={typingStyles.dotsRow}>
+        <TypingDot delay={0} />
+        <TypingDot delay={200} />
+        <TypingDot delay={400} />
+      </View>
+      <ScanLine />
     </Animated.View>
   );
 }
 
 const typingStyles = StyleSheet.create({
   bubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
     alignSelf: 'flex-start',
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,
@@ -295,44 +306,69 @@ const typingStyles = StyleSheet.create({
     borderRadius: 18,
     borderTopLeftRadius: 4,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
     marginLeft: Spacing[4],
+    gap: 8,
     marginBottom: Spacing[2],
   },
+  dotsRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: {
     width: 7,
     height: 7,
     borderRadius: 3.5,
     backgroundColor: Colors.textMuted,
   },
+  scanTrack: {
+    height: 2,
+    width: 80,
+    backgroundColor: Colors.border,
+    borderRadius: 1,
+    overflow: 'hidden',
+  },
+  scanLine: {
+    width: 40,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: Colors.electric,
+    opacity: 0.7,
+  },
 });
 
-// ─── Confidence Badge ─────────────────────────────────────────────────────────
+// ─── Confidence Bar ───────────────────────────────────────────────────────────
 
-function ConfidenceBadge({ level }: { level: 'low' | 'medium' | 'high' }) {
+function ConfidenceBar({ level }: { level: 'low' | 'medium' | 'high' }) {
   const config = {
-    high:   { label: 'High',   color: Colors.accent,   bg: 'rgba(63,185,80,0.12)' },
-    medium: { label: 'Medium', color: Colors.warning,  bg: 'rgba(210,153,34,0.12)' },
-    low:    { label: 'Low',    color: Colors.critical, bg: 'rgba(248,81,73,0.12)' },
+    high:   { label: 'High',   color: Colors.positive, pct: 0.85 },
+    medium: { label: 'Medium', color: Colors.caution,  pct: 0.55 },
+    low:    { label: 'Low',    color: Colors.critical,  pct: 0.25 },
   }[level];
 
+  const barWidth = useSharedValue(0);
+  useEffect(() => {
+    barWidth.value = withDelay(200, withTiming(config.pct, { duration: 600, easing: Easing.out(Easing.ease) }));
+  }, []);
+  const barStyle = useAnimatedStyle(() => ({ width: `${barWidth.value * 100}%` as any }));
+
   return (
-    <View style={[confStyles.badge, { backgroundColor: config.bg }]}>
-      <Text style={[confStyles.label, { color: config.color }]}>{config.label}</Text>
+    <View style={confStyles.row}>
+      <Text style={confStyles.label}>Confidence</Text>
+      <View style={confStyles.track}>
+        <Animated.View style={[confStyles.fill, { backgroundColor: config.color }, barStyle]} />
+      </View>
+      <View style={[confStyles.badge, { backgroundColor: `${config.color}18` }]}>
+        <Text style={[confStyles.badgeText, { color: config.color }]}>{config.label}</Text>
+      </View>
     </View>
   );
 }
 
 const confStyles = StyleSheet.create({
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-  },
-  label: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
+  label: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyRegular, color: Colors.textMuted, width: 68 },
+  track: { flex: 1, height: 4, backgroundColor: Colors.border, borderRadius: 2, overflow: 'hidden' },
+  fill: { height: 4, borderRadius: 2 },
+  badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: BorderRadius.full },
+  badgeText: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyMedium },
 });
 
 // ─── Specialist inline card ───────────────────────────────────────────────────
@@ -419,12 +455,17 @@ function MessageBubble({ message, onSpecialistPress, onReasoningToggle }: Messag
             </Text>
           </View>
         )}
-        <View style={msgStyles.userBubble}>
+        <LinearGradient
+          colors={Colors.gradientElectric}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={msgStyles.userBubble}
+        >
           <Text style={msgStyles.userText}>{content}</Text>
           <Text style={msgStyles.userTime}>
             {format(new Date(timestamp), 'h:mm a')}
           </Text>
-        </View>
+        </LinearGradient>
       </Animated.View>
     );
   }
@@ -444,12 +485,7 @@ function MessageBubble({ message, onSpecialistPress, onReasoningToggle }: Messag
         <Text style={msgStyles.aiText}>{content}</Text>
 
         {/* Confidence */}
-        {confidence && (
-          <View style={msgStyles.confRow}>
-            <Text style={msgStyles.confLabel}>Confidence:</Text>
-            <ConfidenceBadge level={confidence} />
-          </View>
-        )}
+        {confidence && <ConfidenceBar level={confidence} />}
 
         {/* Reasoning accordion */}
         {reasoning && (
@@ -555,16 +591,6 @@ const msgStyles = StyleSheet.create({
     color: Colors.textPrimary,
     lineHeight: 22,
   },
-  confRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[2],
-  },
-  confLabel: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-  },
   reasoningSection: { gap: 6 },
   reasoningToggle: {
     flexDirection: 'row',
@@ -622,7 +648,7 @@ function EmptyState({ onPromptSelect }: EmptyStateProps) {
     <Animated.View entering={FadeInUp.duration(400)} style={emptyStyles.root}>
       {/* Logo mark */}
       <LinearGradient
-        colors={Colors.gradientBlue}
+        colors={Colors.gradientElectric}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={emptyStyles.logo}
@@ -630,23 +656,25 @@ function EmptyState({ onPromptSelect }: EmptyStateProps) {
         <Text style={emptyStyles.logoLetter}>C</Text>
       </LinearGradient>
 
-      <Text style={emptyStyles.headline}>Ask anything about your health</Text>
+      <Text style={emptyStyles.headline}>Ask anything about{'\n'}your health</Text>
       <Text style={emptyStyles.sub}>I have context from your health profile</Text>
 
-      {/* Quick prompt chips */}
-      <View style={emptyStyles.chips}>
-        {QUICK_PROMPTS.map((prompt) => (
-          <TouchableOpacity
-            key={prompt}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onPromptSelect(prompt);
-            }}
-            activeOpacity={0.75}
-            style={emptyStyles.chip}
-          >
-            <Text style={emptyStyles.chipText}>{prompt}</Text>
-          </TouchableOpacity>
+      {/* Suggestion rows */}
+      <View style={emptyStyles.suggestions}>
+        {QUICK_PROMPTS.map((prompt, i) => (
+          <Animated.View key={prompt} entering={FadeInUp.delay(i * 60).duration(300)}>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onPromptSelect(prompt);
+              }}
+              activeOpacity={0.75}
+              style={emptyStyles.row}
+            >
+              <Text style={emptyStyles.rowText}>{prompt}</Text>
+              <Text style={emptyStyles.rowArrow}>→</Text>
+            </TouchableOpacity>
+          </Animated.View>
         ))}
       </View>
     </Animated.View>
@@ -657,34 +685,35 @@ const emptyStyles = StyleSheet.create({
   root: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     paddingHorizontal: Spacing[5],
     paddingBottom: 80,
+    paddingTop: Spacing[10],
     gap: Spacing[4],
   },
   logo: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing[2],
     ...Platform.select({
-      ios: { shadowColor: Colors.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 18 },
+      ios: { shadowColor: Colors.electric, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20 },
       android: { elevation: 6 },
     }),
   },
   logoLetter: {
-    fontSize: 28,
-    fontFamily: FontFamily.display,
+    fontSize: 30,
+    fontFamily: FontFamily.displayExtraBold,
     color: '#FFFFFF',
-    lineHeight: 34,
+    lineHeight: 36,
   },
   headline: {
     fontSize: FontSize.xl,
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
     textAlign: 'center',
+    lineHeight: 28,
   },
   sub: {
     fontSize: FontSize.sm,
@@ -693,25 +722,27 @@ const emptyStyles = StyleSheet.create({
     textAlign: 'center',
     marginTop: -Spacing[2],
   },
-  chips: {
+  suggestions: { width: '100%', gap: Spacing[2], marginTop: Spacing[2] },
+  row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: Spacing[2],
-    marginTop: Spacing[2],
-  },
-  chip: {
+    alignItems: 'center',
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing[4],
+    paddingVertical: 14,
   },
-  chipText: {
+  rowText: {
+    flex: 1,
     fontSize: FontSize.sm,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textSecondary,
+  },
+  rowArrow: {
+    fontSize: FontSize.md,
+    color: Colors.textMuted,
+    fontFamily: FontFamily.bodyMedium,
   },
 });
 
@@ -1106,10 +1137,15 @@ export default function ChatScreen() {
     <View style={[screenStyles.root, { paddingTop: insets.top }]}>
       {/* ── A. Header ──────────────────────────────────────────────────── */}
       <View style={screenStyles.header}>
-        <Text style={screenStyles.headerTitle}>AI Assistant</Text>
-
-        <EngineToggle mode={engineMode} onChange={handleModeSwitch} />
-
+        <View>
+          <Text style={screenStyles.headerTitle}>AI Assistant</Text>
+          <View style={screenStyles.modePillRow}>
+            <View style={[screenStyles.modePip, { backgroundColor: modeColor }]} />
+            <Text style={[screenStyles.modeLabel, { color: modeColor }]}>
+              {engineMode === 'ai' ? 'AI Mode' : 'Rule Engine'}
+            </Text>
+          </View>
+        </View>
         <TouchableOpacity
           onPress={() => setHistoryVisible(true)}
           style={screenStyles.historyBtn}
@@ -1119,13 +1155,8 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Mode indicator dot */}
-      <View style={screenStyles.modeDotRow}>
-        <View style={[screenStyles.modeDot, { backgroundColor: modeColor }]} />
-        <Text style={[screenStyles.modeDotLabel, { color: modeColor }]}>
-          {engineMode === 'ai' ? 'AI Mode active' : 'Rule Engine active'}
-        </Text>
-      </View>
+      {/* Engine cards */}
+      <EngineToggle mode={engineMode} onChange={handleModeSwitch} />
 
       {/* ── B+C. Message list / Empty state ───────────────────────────── */}
       <KeyboardAvoidingView
@@ -1197,42 +1228,30 @@ const screenStyles = StyleSheet.create({
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing[4],
     paddingTop: Spacing[3],
-    paddingBottom: Spacing[2],
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingBottom: Spacing[3],
   },
   headerTitle: {
-    fontSize: FontSize.xl,
-    fontFamily: FontFamily.display,
+    fontSize: FontSize['2xl'],
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
-    flex: 1,
+    lineHeight: 30,
   },
+  modePillRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  modePip: { width: 6, height: 6, borderRadius: 3 },
+  modeLabel: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyMedium },
   historyBtn: {
     width: 36,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 0,
-  },
-  modeDotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: Spacing[4],
-    paddingVertical: 6,
-  },
-  modeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  modeDotLabel: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
   },
   listContent: {
     paddingTop: Spacing[3],

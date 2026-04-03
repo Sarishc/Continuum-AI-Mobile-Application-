@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: FontSize.xl,
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
   },
   closeBtn: {
@@ -327,14 +327,15 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing[5],
     marginTop: Spacing[3],
     height: 50,
-    backgroundColor: Colors.surfaceElevated,
+    backgroundColor: Colors.electricMist,
     borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    borderWidth: 1.5,
+    borderColor: Colors.electric,
+    borderStyle: 'dashed',
   },
   newConvLabel: {
     fontSize: FontSize.md,
     fontFamily: FontFamily.bodySemiBold,
-    color: Colors.primary,
+    color: Colors.electric,
   },
 });

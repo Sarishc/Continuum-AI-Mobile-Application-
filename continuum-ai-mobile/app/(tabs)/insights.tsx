@@ -56,17 +56,17 @@ const SEVERITY_ORDER: SeverityLevel[] = ['critical', 'high', 'moderate', 'low'];
 
 const SEVERITY_COLOR: Record<SeverityLevel, string> = {
   critical: Colors.critical,
-  high: '#D29922',
-  moderate: Colors.primary,
-  low: Colors.accent,
+  high: Colors.caution,
+  moderate: Colors.electric,
+  low: Colors.positive,
 };
 
 const BANNER_GRADIENT: Record<SeverityLevel | 'none', [string, string]> = {
-  critical: ['#F85149', '#DA3633'],
-  high: ['#D29922', '#B7821A'],
-  moderate: ['#388BFD', '#1F6FEB'],
-  low: ['#3FB950', '#2EA043'],
-  none: ['#3FB950', '#2EA043'],
+  critical: Colors.gradientCritical,
+  high: Colors.gradientCaution,
+  moderate: Colors.gradientElectric,
+  low: Colors.gradientPositive,
+  none: Colors.gradientPositive,
 };
 
 const CATEGORIES = ['All Categories', 'Cardiovascular', 'Metabolic', 'Medication', 'Lifestyle', 'Preventive', 'General'];
@@ -514,7 +514,7 @@ const bannerStyles = StyleSheet.create({
   textBlock: { flex: 1, gap: 4 },
   title: {
     fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: '#FFFFFF',
     lineHeight: 28,
   },
@@ -538,9 +538,9 @@ function SeverityFilterRow({ active, counts, onChange }: SeverityFilterRowProps)
   const chips: { key: SeverityFilter; label: string; color?: string }[] = [
     { key: 'all', label: 'All' },
     { key: 'critical', label: 'Critical', color: Colors.critical },
-    { key: 'high', label: 'High', color: '#D29922' },
-    { key: 'moderate', label: 'Moderate', color: Colors.primary },
-    { key: 'low', label: 'Low', color: Colors.accent },
+    { key: 'high', label: 'High', color: Colors.caution },
+    { key: 'moderate', label: 'Moderate', color: Colors.electric },
+    { key: 'low', label: 'Low', color: Colors.positive },
   ];
 
   return (
@@ -659,15 +659,15 @@ const filterStyles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   catChipActive: {
-    borderColor: Colors.purple,
-    backgroundColor: 'rgba(188,140,255,0.1)',
+    borderColor: Colors.insight,
+    backgroundColor: Colors.insightGlow,
   },
   catChipText: {
     fontSize: FontSize.xs,
     fontFamily: FontFamily.bodyMedium,
     color: Colors.textSecondary,
   },
-  catChipTextActive: { color: Colors.purple },
+  catChipTextActive: { color: Colors.insight },
 });
 
 
@@ -1144,7 +1144,7 @@ function EmptyAllClear({ onAddData }: { onAddData: () => void }) {
       </Text>
       <TouchableOpacity onPress={onAddData} activeOpacity={0.85} style={emptyStyles.btnWrap}>
         <LinearGradient
-          colors={Colors.gradientBlue}
+          colors={Colors.gradientElectric}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={emptyStyles.btn}
@@ -1176,7 +1176,7 @@ const emptyStyles = StyleSheet.create({
   },
   title: {
     fontSize: FontSize['3xl'],
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
     textAlign: 'center',
   },
@@ -1344,7 +1344,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
   },
   headerSub: {

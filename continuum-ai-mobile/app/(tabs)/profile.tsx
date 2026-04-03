@@ -124,7 +124,7 @@ function ProfileHeaderCard({
       {/* Identity row */}
       <View style={headerCardStyles.identityRow}>
         <View style={headerCardStyles.avatarWrap}>
-          <LinearGradient colors={Colors.gradientBlue} style={headerCardStyles.avatarGradient}>
+          <LinearGradient colors={Colors.gradientElectric} style={headerCardStyles.avatarGradient}>
             <Text style={headerCardStyles.avatarInitials}>
               {name
                 ? name.trim().split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()
@@ -180,7 +180,7 @@ const headerCardStyles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: 'rgba(56,139,253,0.12)',
+    backgroundColor: Colors.electricMist,
   },
   identityRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
   avatarWrap: { borderRadius: 36, overflow: 'hidden', ...Platform.select({ ios: { shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12 }, android: { elevation: 6 }, default: {} }) },
@@ -193,7 +193,7 @@ const headerCardStyles = StyleSheet.create({
   },
   avatarInitials: {
     fontSize: 28,
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: '#FFFFFF',
   },
   identityText: { flex: 1, gap: 3 },
@@ -298,7 +298,7 @@ const healthCardStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: BorderRadius.full,
-    backgroundColor: 'rgba(56,139,253,0.12)',
+    backgroundColor: Colors.electricMist,
     borderWidth: 1,
     borderColor: 'rgba(56,139,253,0.3)',
   },
@@ -398,7 +398,7 @@ function AboutModal({ visible, onClose }: { visible: boolean; onClose: () => voi
   return (
     <CenteredModal visible={visible} onClose={onClose}>
       <View style={aboutStyles.logoWrap}>
-        <LinearGradient colors={Colors.gradientBlue} style={aboutStyles.logo}>
+        <LinearGradient colors={Colors.gradientElectric} style={aboutStyles.logo}>
           <Text style={aboutStyles.logoText}>C</Text>
         </LinearGradient>
       </View>
@@ -749,7 +749,7 @@ const profileStyles = StyleSheet.create({
   pageHeader: { paddingBottom: Spacing[1] },
   pageTitle: {
     fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.display,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
   },
   section: { gap: Spacing[3] },
