@@ -26,6 +26,8 @@ interface HealthState {
   setInsights: (insights: Insight[]) => void;
   addInsight: (insight: Insight) => void;
   dismissInsight: (id: string) => void;
+  markInsightRead: (id: string) => void;
+  markAllInsightsRead: () => void;
   setTimeline: (entries: HealthEntry[]) => void;
   addEntry: (entry: HealthEntry) => void;
   setConversations: (conversations: Conversation[]) => void;
@@ -72,6 +74,18 @@ export const useHealthStore = create<HealthState>((set, get) => ({
       insights: state.insights.map((i) =>
         i.id === id ? { ...i, dismissed: true } : i
       ),
+    })),
+
+  markInsightRead: (id) =>
+    set((state) => ({
+      insights: state.insights.map((i) =>
+        i.id === id ? { ...i, is_read: true } : i
+      ),
+    })),
+
+  markAllInsightsRead: () =>
+    set((state) => ({
+      insights: state.insights.map((i) => ({ ...i, is_read: true })),
     })),
 
   setTimeline: (entries) => set({ timeline: entries }),

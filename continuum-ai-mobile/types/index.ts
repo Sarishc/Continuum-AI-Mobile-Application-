@@ -110,6 +110,8 @@ export interface Insight {
   id: string;
   userId: string;
   category: InsightCategory;
+  /** Health-domain category for display/filter (e.g. 'Metabolic', 'Cardiovascular') */
+  healthCategory?: string;
   title: string;
   summary: string;
   details: string;
@@ -118,6 +120,10 @@ export interface Insight {
   relatedEntryIds: string[];
   actionable: boolean;
   dismissed: boolean;
+  /** Whether the user has viewed this insight (separate from dismissal) */
+  is_read?: boolean;
+  /** Specialist recommendation attached to this insight */
+  specialist?: SpecialistRecommendation;
   generatedAt: string;
 }
 
