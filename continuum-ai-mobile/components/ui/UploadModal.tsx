@@ -235,13 +235,15 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
       setIsSubmitting(true);
       const file = result.assets[0];
       try {
-        await healthApi.createEntry({
-          type: 'lab_result',
-          title: file.name ?? 'Uploaded Document',
-          tags: ['upload', 'document'],
-          attachments: [],
-          recordedAt: new Date().toISOString(),
-        });
+        const fd = new FormData();
+        fd.append('file', {
+          uri: file.uri,
+          name: file.name ?? 'upload.pdf',
+          type: file.mimeType ?? 'application/octet-stream',
+        } as any);
+        fd.append('type', 'lab_result');
+        fd.append('recorded_at', new Date().toISOString());
+        await healthApi.uploadEntry(fd);
       } catch {
         // Offline fallback
         addEntry({

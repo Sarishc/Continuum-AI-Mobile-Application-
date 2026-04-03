@@ -1,0 +1,6 @@
+# Additional requirements for mobile backend integration
+# Append these to your existing requirements.txt
+
+httpx>=0.27.0          # Expo push notification HTTP client
+python-multipart>=0.0.9  # Multipart file upload support (FastAPI dependency)
+aiofiles>=23.2.1       # Async file I/O for uploads

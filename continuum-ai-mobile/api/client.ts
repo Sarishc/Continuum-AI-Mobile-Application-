@@ -26,6 +26,13 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 let isRefreshing = false;
 let refreshQueue: Array<(token: string) => void> = [];
 
+/** Bare axios instance — never intercepted, avoids refresh loop */
+const _rawAxios = axios.create({
+  baseURL: API_URL,
+  timeout: 15_000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -48,14 +55,32 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
+      const store = useAuthStore.getState();
+      const currentRefreshToken = store.refreshToken;
+
       try {
-        // Token refresh would call a dedicated endpoint here.
-        // For now, fall through to logout on 401.
-        throw new Error('Refresh not implemented');
+        if (!currentRefreshToken) throw new Error('No refresh token');
+
+        const resp = await _rawAxios.post<{
+          access_token: string;
+          refresh_token: string;
+        }>('/auth/refresh', { refresh_token: currentRefreshToken });
+
+        const newAccess = resp.data.access_token;
+        const newRefresh = resp.data.refresh_token;
+
+        await store.setTokens(newAccess, newRefresh);
+
+        refreshQueue.forEach((cb) => cb(newAccess));
+        refreshQueue = [];
+
+        if (originalRequest.headers) {
+          originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+        }
+        return apiClient(originalRequest);
       } catch {
         refreshQueue.forEach((cb) => cb(''));
         refreshQueue = [];
-        isRefreshing = false;
         await useAuthStore.getState().logout();
         return Promise.reject(error);
       } finally {

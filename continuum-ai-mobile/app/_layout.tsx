@@ -14,7 +14,7 @@ import {
 import { DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../store/authStore';
-import { registerForPushNotifications, useNotificationTap } from '../services/notifications';
+import { registerAndSyncPushToken, useNotificationTap } from '../services/notifications';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Toast } from '../components/ui/Toast';
 import { Colors } from '../constants/colors';
@@ -125,7 +125,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded) {
-      registerForPushNotifications().catch(() => {});
+      registerAndSyncPushToken().catch(() => {});
     }
   }, [fontsLoaded]);
 

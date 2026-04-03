@@ -1,7 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import { Platform } from 'react-native';
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
+import apiClient from '../api/client';
 
 // ─── Global notification handler ─────────────────────────────────────────────
 
@@ -36,6 +38,22 @@ export async function registerForPushNotifications(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ─── Register + sync push token to backend ───────────────────────────────────
+
+export async function registerAndSyncPushToken(): Promise<string | null> {
+  const token = await registerForPushNotifications();
+  if (!token) return null;
+  try {
+    await apiClient.post('/users/push-token', {
+      token,
+      platform: Platform.OS,
+    });
+  } catch {
+    // Non-critical — token will sync on next successful registration
+  }
+  return token;
 }
 
 // ─── Local notification scheduler ────────────────────────────────────────────
