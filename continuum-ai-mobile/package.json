@@ -11,6 +11,8 @@
   "dependencies": {
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/dm-serif-display": "^0.4.2",
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/syne": "^0.4.2",
     "@react-native-community/netinfo": "^12.0.1",
     "@shopify/flash-list": "^2.3.1",
     "@tanstack/react-query": "^5.96.1",

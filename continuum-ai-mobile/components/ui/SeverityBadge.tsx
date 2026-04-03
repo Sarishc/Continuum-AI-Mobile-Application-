@@ -1,8 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, Platform } from 'react-native';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
-import { BorderRadius } from '../../constants/theme';
 import type { SeverityLevel } from '../../types';
 
 interface SeverityBadgeProps {
@@ -10,19 +9,64 @@ interface SeverityBadgeProps {
   style?: ViewStyle;
 }
 
-const severityConfig: Record<SeverityLevel, { label: string; color: string; bg: string }> = {
-  low: { label: 'Low', color: Colors.accent, bg: 'rgba(63, 185, 80, 0.12)' },
-  moderate: { label: 'Moderate', color: Colors.warning, bg: 'rgba(210, 153, 34, 0.12)' },
-  high: { label: 'High', color: '#FF9500', bg: 'rgba(255, 149, 0, 0.12)' },
-  critical: { label: 'Critical', color: Colors.critical, bg: 'rgba(248, 81, 73, 0.12)' },
+const severityConfig: Record<SeverityLevel, {
+  label: string;
+  color: string;
+  bg: string;
+  border: string;
+  shadow: string;
+}> = {
+  critical: {
+    label: 'Critical',
+    color: Colors.critical,
+    bg: Colors.criticalGlow,
+    border: 'rgba(255,79,107,0.35)',
+    shadow: Colors.critical,
+  },
+  high: {
+    label: 'High',
+    color: Colors.caution,
+    bg: Colors.cautionGlow,
+    border: 'rgba(255,181,71,0.35)',
+    shadow: Colors.caution,
+  },
+  moderate: {
+    label: 'Moderate',
+    color: Colors.electric,
+    bg: Colors.electricGlow,
+    border: 'rgba(79,126,255,0.35)',
+    shadow: Colors.electric,
+  },
+  low: {
+    label: 'Low',
+    color: Colors.positive,
+    bg: Colors.positiveGlow,
+    border: 'rgba(0,200,150,0.35)',
+    shadow: Colors.positive,
+  },
 };
 
 export function SeverityBadge({ severity, style }: SeverityBadgeProps) {
-  const config = severityConfig[severity];
+  const cfg = severityConfig[severity] ?? severityConfig.moderate;
   return (
-    <View style={[styles.badge, { backgroundColor: config.bg }, style]}>
-      <View style={[styles.dot, { backgroundColor: config.color }]} />
-      <Text style={[styles.label, { color: config.color }]}>{config.label}</Text>
+    <View
+      style={[
+        styles.badge,
+        {
+          backgroundColor: cfg.bg,
+          borderColor: cfg.border,
+        },
+        Platform.OS === 'ios' && {
+          shadowColor: cfg.shadow,
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+        },
+        style,
+      ]}
+    >
+      <View style={[styles.dot, { backgroundColor: cfg.color }]} />
+      <Text style={[styles.label, { color: cfg.color }]}>{cfg.label}</Text>
     </View>
   );
 }
@@ -34,17 +78,18 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: BorderRadius.full,
+    borderRadius: 999,
+    borderWidth: 1,
     alignSelf: 'flex-start',
   },
   dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   label: {
     fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    letterSpacing: 0.3,
+    fontFamily: FontFamily.displayMedium,
+    letterSpacing: 0.2,
   },
 });

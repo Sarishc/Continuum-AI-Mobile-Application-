@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { AnimatedBackground } from '../../components/ui/AnimatedBackground';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -174,11 +175,15 @@ function BodyIllustration() {
 export default function Step1() {
   return (
     <View style={styles.root}>
+      <AnimatedBackground />
       <View style={styles.illustrationWrap}>
         <BodyIllustration />
       </View>
       <Animated.View entering={FadeInUp.delay(300).duration(400)} style={styles.textBlock}>
-        <Text style={styles.heading}>{'Your health,\nunderstood.'}</Text>
+        <Text style={styles.heading}>
+          <Text style={styles.headingWhite}>{'YOUR HEALTH\n'}</Text>
+          <Text style={styles.headingElectric}>{'UNDERSTOOD'}</Text>
+        </Text>
         <Text style={styles.body}>
           Continuum learns from your health data and tells you what matters — in plain language.
         </Text>
@@ -188,9 +193,11 @@ export default function Step1() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing[6] },
+  root: { flex: 1, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing[6] },
   illustrationWrap: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: Spacing[6] },
   textBlock: { flex: 1, alignItems: 'flex-start', justifyContent: 'flex-start', gap: Spacing[4], paddingBottom: Spacing[4] },
-  heading: { fontSize: 36, fontFamily: FontFamily.display, color: Colors.textPrimary, lineHeight: 44 },
+  heading: { fontSize: 42, fontFamily: FontFamily.displayExtraBold, lineHeight: 48, letterSpacing: -1.5 },
+  headingWhite: { color: Colors.textPrimary },
+  headingElectric: { color: Colors.electric },
   body: { fontSize: FontSize.md, fontFamily: FontFamily.bodyRegular, color: Colors.textSecondary, lineHeight: 24, maxWidth: 300 },
 });

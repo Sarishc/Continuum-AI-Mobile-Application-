@@ -38,9 +38,10 @@ function DotIndicators({ page }: { page: number }) {
             style={[
               dotStyles.dot,
               {
-                width: isActive ? 24 : 8,
-                backgroundColor: isActive ? Colors.primary : Colors.border,
-                opacity: isActive ? 1 : 0.6,
+                width: isActive ? 24 : 6,
+                height: isActive ? 8 : 6,
+                backgroundColor: isActive ? Colors.electric : Colors.rim,
+                opacity: isActive ? 1 : 0.5,
               },
             ]}
           />
@@ -145,7 +146,7 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+  root: { flex: 1, backgroundColor: '#000000' },
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
   topBarInner: {
     flexDirection: 'row',

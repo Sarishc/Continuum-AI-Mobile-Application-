@@ -6,12 +6,18 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   useFonts,
-  DMSans_400Regular,
-  DMSans_500Medium,
-  DMSans_600SemiBold,
-  DMSans_700Bold,
-} from '@expo-google-fonts/dm-sans';
-import { DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
+  Syne_400Regular,
+  Syne_500Medium,
+  Syne_600SemiBold,
+  Syne_700Bold,
+  Syne_800ExtraBold,
+} from '@expo-google-fonts/syne';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../store/authStore';
 import { registerAndSyncPushToken, useNotificationTap } from '../services/notifications';
@@ -49,9 +55,9 @@ function NetworkBanner() {
 
 const bannerStyles = StyleSheet.create({
   banner: {
-    backgroundColor: 'rgba(210,153,34,0.15)',
+    backgroundColor: 'rgba(255,181,71,0.10)',
     borderBottomWidth: 1,
-    borderBottomColor: Colors.warning,
+    borderBottomColor: Colors.caution,
     paddingVertical: Spacing[2],
     paddingHorizontal: Spacing[4],
     alignItems: 'center',
@@ -59,8 +65,9 @@ const bannerStyles = StyleSheet.create({
   text: {
     fontSize: FontSize.xs,
     fontFamily: FontFamily.bodyMedium,
-    color: Colors.warning,
+    color: Colors.caution,
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
 });
 
@@ -109,11 +116,15 @@ export default function RootLayout() {
   const { hydrate } = useAuthStore();
 
   const [fontsLoaded] = useFonts({
-    DMSans_400Regular,
-    DMSans_500Medium,
-    DMSans_600SemiBold,
-    DMSans_700Bold,
-    DMSerifDisplay_400Regular,
+    Syne_400Regular,
+    Syne_500Medium,
+    Syne_600SemiBold,
+    Syne_700Bold,
+    Syne_800ExtraBold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
   });
 
   // Handle notification taps → deep link to correct screen
@@ -163,10 +174,10 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+  root: { flex: 1, backgroundColor: Colors.void },
   loading: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.void,
     alignItems: 'center',
     justifyContent: 'center',
   },

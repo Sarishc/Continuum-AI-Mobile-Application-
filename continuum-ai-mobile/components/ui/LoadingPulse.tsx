@@ -4,12 +4,14 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
-  withSequence,
   withTiming,
   Easing,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../constants/colors';
-import { BorderRadius } from '../../constants/theme';
+import { BorderRadius, Spacing } from '../../constants/theme';
+
+// ─── Single shimmer skeleton ──────────────────────────────────────────────────
 
 interface LoadingPulseProps {
   width?: number | string;
@@ -24,34 +26,42 @@ export function LoadingPulse({
   borderRadius = BorderRadius.sm,
   style,
 }: LoadingPulseProps) {
-  const opacity = useSharedValue(1);
+  const translateX = useSharedValue(-1.2);
 
   useEffect(() => {
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(0.3, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) })
-      ),
+    translateX.value = withRepeat(
+      withTiming(1.2, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
       -1,
-      false
+      false,
     );
   }, []);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+  const shimmerStyle = useAnimatedStyle(() => ({
+    // Use percentage-based translation by converting to a transform
+    transform: [{ translateX: translateX.value * 150 }],
   }));
 
   return (
-    <Animated.View
+    <View
       style={[
-        styles.pulse,
-        animatedStyle,
-        { width: width as number, height, borderRadius },
+        styles.container,
+        { width: width as any, height, borderRadius },
         style,
       ]}
-    />
+    >
+      <Animated.View style={[StyleSheet.absoluteFill, shimmerStyle]}>
+        <LinearGradient
+          colors={['transparent', 'rgba(255,255,255,0.045)', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </View>
   );
 }
+
+// ─── Loading card (multiple shimmer lines) ────────────────────────────────────
 
 interface LoadingCardProps {
   lines?: number;
@@ -64,20 +74,21 @@ export function LoadingCard({ lines = 3, style }: LoadingCardProps) {
       style={[
         {
           backgroundColor: Colors.surface,
-          borderRadius: BorderRadius.lg,
-          padding: 16,
-          gap: 10,
+          borderRadius: BorderRadius.xl,
           borderWidth: 1,
-          borderColor: Colors.border,
+          borderColor: Colors.rim,
+          padding: Spacing[4],
+          gap: Spacing[3],
         },
         style,
       ]}
     >
-      <LoadingPulse height={14} width="60%" />
-      {Array.from({ length: lines - 1 }).map((_, i) => (
+      <LoadingPulse height={14} width="60%" borderRadius={7} />
+      {Array.from({ length: Math.max(lines - 1, 0) }).map((_, i) => (
         <LoadingPulse
           key={i}
           height={12}
+          borderRadius={6}
           width={i === lines - 2 ? '40%' : '100%'}
         />
       ))}
@@ -86,7 +97,8 @@ export function LoadingCard({ lines = 3, style }: LoadingCardProps) {
 }
 
 const styles = StyleSheet.create({
-  pulse: {
-    backgroundColor: Colors.surfaceElevated,
+  container: {
+    backgroundColor: Colors.surface,
+    overflow: 'hidden',
   },
 });

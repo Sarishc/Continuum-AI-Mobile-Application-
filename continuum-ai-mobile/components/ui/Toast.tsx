@@ -1,41 +1,72 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated as RNAnimated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Animated as RNAnimated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToastStore, type ToastType } from '../../store/toastStore';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { Spacing, BorderRadius } from '../../constants/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const TOAST_CONFIG: Record<ToastType, { color: string; bg: string; icon: string }> = {
-  success: { color: Colors.accent,   bg: 'rgba(63,185,80,0.12)',   icon: '✓' },
-  error:   { color: Colors.critical, bg: 'rgba(248,81,73,0.12)',   icon: '✕' },
-  info:    { color: Colors.primary,  bg: 'rgba(56,139,253,0.12)',  icon: 'ℹ' },
-  warning: { color: Colors.warning,  bg: 'rgba(210,153,34,0.12)', icon: '⚠' },
+const TOAST_CONFIG: Record<ToastType, { color: string; bg: string; border: string; icon: string }> = {
+  success: {
+    color: Colors.positive,
+    bg: Colors.positiveGlow,
+    border: 'rgba(0,200,150,0.3)',
+    icon: '✓',
+  },
+  error: {
+    color: Colors.critical,
+    bg: Colors.criticalGlow,
+    border: 'rgba(255,79,107,0.3)',
+    icon: '✕',
+  },
+  info: {
+    color: Colors.electric,
+    bg: Colors.electricGlow,
+    border: 'rgba(79,126,255,0.3)',
+    icon: 'i',
+  },
+  warning: {
+    color: Colors.caution,
+    bg: Colors.cautionGlow,
+    border: 'rgba(255,181,71,0.3)',
+    icon: '!',
+  },
 };
 
-function ToastItem({ message, type, onDismiss }: {
+function ToastItem({
+  message,
+  type,
+  onDismiss,
+}: {
   message: string;
   type: ToastType;
   onDismiss: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new RNAnimated.Value(-80)).current;
+  const translateY = useRef(new RNAnimated.Value(-100)).current;
   const opacity = useRef(new RNAnimated.Value(0)).current;
-  const config = TOAST_CONFIG[type];
+  const cfg = TOAST_CONFIG[type];
 
   useEffect(() => {
     RNAnimated.parallel([
-      RNAnimated.spring(translateY, { toValue: 0, damping: 18, stiffness: 220, useNativeDriver: true }),
-      RNAnimated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      RNAnimated.spring(translateY, {
+        toValue: 0,
+        damping: 20,
+        stiffness: 260,
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(opacity, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
     ]).start();
   }, []);
 
   const dismiss = () => {
     RNAnimated.parallel([
-      RNAnimated.timing(translateY, { toValue: -80, duration: 220, useNativeDriver: true }),
-      RNAnimated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+      RNAnimated.timing(translateY, { toValue: -100, duration: 200, useNativeDriver: true }),
+      RNAnimated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }),
     ]).start(() => onDismiss());
   };
 
@@ -45,15 +76,16 @@ function ToastItem({ message, type, onDismiss }: {
         styles.toast,
         {
           top: insets.top + Spacing[3],
-          backgroundColor: config.bg,
-          borderLeftColor: config.color,
+          backgroundColor: Colors.elevated,
+          borderColor: cfg.border,
+          borderLeftColor: cfg.color,
           transform: [{ translateY }],
           opacity,
         },
       ]}
     >
-      <View style={[styles.iconWrap, { backgroundColor: `${config.color}22` }]}>
-        <Text style={[styles.icon, { color: config.color }]}>{config.icon}</Text>
+      <View style={[styles.iconWrap, { backgroundColor: `${cfg.color}20` }]}>
+        <Text style={[styles.icon, { color: cfg.color }]}>{cfg.icon}</Text>
       </View>
       <Text style={styles.message} numberOfLines={2}>{message}</Text>
     </RNAnimated.View>
@@ -78,7 +110,14 @@ export function Toast() {
   }, [toast?.id]);
 
   if (!toast) return null;
-  return <ToastItem key={toast.id} message={toast.message} type={toast.type} onDismiss={hideToast} />;
+  return (
+    <ToastItem
+      key={toast.id}
+      message={toast.message}
+      type={toast.type}
+      onDismiss={hideToast}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
@@ -89,20 +128,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing[3],
-    backgroundColor: 'rgba(56,139,253,0.12)',
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
     borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
     paddingHorizontal: Spacing[4],
     paddingVertical: Spacing[3],
     zIndex: 9999,
-    ...{
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.4,
-      shadowRadius: 12,
-      elevation: 10,
-    },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
   },
   iconWrap: {
     width: 28,
@@ -114,12 +150,12 @@ const styles = StyleSheet.create({
   },
   icon: {
     fontSize: 13,
-    fontFamily: FontFamily.bodySemiBold,
+    fontFamily: FontFamily.displaySemiBold,
   },
   message: {
     flex: 1,
     fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
+    fontFamily: FontFamily.displayMedium,
     color: Colors.textPrimary,
     lineHeight: 19,
   },

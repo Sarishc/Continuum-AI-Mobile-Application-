@@ -1,19 +1,30 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { Spacing } from '../../constants/theme';
 
 interface SectionHeaderProps {
   title: string;
+  rightAction?: { label: string; onPress: () => void };
   style?: ViewStyle;
 }
 
-export function SectionHeader({ title, style }: SectionHeaderProps) {
+export function SectionHeader({ title, rightAction, style }: SectionHeaderProps) {
   return (
     <View style={[styles.row, style]}>
       <Text style={styles.label}>{title}</Text>
-      <View style={styles.line} />
+      {rightAction ? (
+        <TouchableOpacity
+          onPress={rightAction.onPress}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.action}>{rightAction.label}</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.line} />
+      )}
     </View>
   );
 }
@@ -26,14 +37,19 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textMuted,
+    fontFamily: FontFamily.bodySemiBold,
+    color: Colors.textTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 1.2,
+    letterSpacing: 2,
   },
   line: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: Colors.rim,
+  },
+  action: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.electric,
   },
 });

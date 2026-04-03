@@ -1,15 +1,16 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ViewStyle,
+  Animated as RNAnimated,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
-import { Spacing } from '../../constants/theme';
+import { Spacing, BorderRadius } from '../../constants/theme';
 
 function ChevronRight() {
   return (
@@ -35,6 +36,7 @@ interface SettingsRowProps {
   showDivider?: boolean;
   showChevron?: boolean;
   style?: ViewStyle;
+  iconBgColor?: string;
 }
 
 export function SettingsRow({
@@ -47,24 +49,65 @@ export function SettingsRow({
   showDivider = true,
   showChevron = true,
   style,
+  iconBgColor,
 }: SettingsRowProps) {
+  const flashAnim = useRef(new RNAnimated.Value(0)).current;
+
+  const handlePress = () => {
+    if (!onPress) return;
+    flashAnim.value = 1;
+    RNAnimated.sequence([
+      RNAnimated.timing(flashAnim, { toValue: 1, duration: 40, useNativeDriver: false }),
+      RNAnimated.timing(flashAnim, { toValue: 0, duration: 160, useNativeDriver: false }),
+    ]).start();
+    onPress();
+  };
+
+  const flashBg = flashAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['transparent', Colors.electricMist],
+  });
+
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={onPress ? 0.7 : 1}
-      style={[styles.row, showDivider && styles.divider, style]}
-    >
-      <Text style={styles.icon}>{icon}</Text>
-      <View style={styles.textBlock}>
-        <Text style={[styles.label, labelColor ? { color: labelColor } : null]}>
-          {label}
-        </Text>
-        {sublabel ? <Text style={styles.sublabel}>{sublabel}</Text> : null}
-      </View>
-      <View style={styles.right}>
-        {rightElement ?? (showChevron && onPress ? <ChevronRight /> : null)}
-      </View>
-    </TouchableOpacity>
+    <RNAnimated.View style={{ backgroundColor: flashBg }}>
+      <TouchableOpacity
+        onPress={handlePress}
+        activeOpacity={onPress ? 0.85 : 1}
+        style={[styles.row, showDivider && styles.divider, style]}
+      >
+        {/* Icon container */}
+        <View
+          style={[
+            styles.iconContainer,
+            iconBgColor
+              ? { backgroundColor: iconBgColor }
+              : { backgroundColor: Colors.surface, borderColor: Colors.rim },
+          ]}
+        >
+          <Text style={styles.iconEmoji}>{icon}</Text>
+        </View>
+
+        {/* Text */}
+        <View style={styles.textBlock}>
+          <Text
+            style={[
+              styles.label,
+              labelColor ? { color: labelColor } : null,
+            ]}
+          >
+            {label}
+          </Text>
+          {sublabel ? (
+            <Text style={styles.sublabel}>{sublabel}</Text>
+          ) : null}
+        </View>
+
+        {/* Right element */}
+        <View style={styles.right}>
+          {rightElement ?? (showChevron && onPress ? <ChevronRight /> : null)}
+        </View>
+      </TouchableOpacity>
+    </RNAnimated.View>
   );
 }
 
@@ -79,23 +122,32 @@ const styles = StyleSheet.create({
   },
   divider: {
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: Colors.rim,
   },
-  icon: {
-    fontSize: 18,
-    width: 24,
-    textAlign: 'center',
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  iconEmoji: {
+    fontSize: 16,
+    lineHeight: 20,
   },
   textBlock: { flex: 1, gap: 2 },
   label: {
     fontSize: FontSize.md,
-    fontFamily: FontFamily.bodyRegular,
+    fontFamily: FontFamily.displayMedium,
     color: Colors.textPrimary,
   },
   sublabel: {
     fontSize: FontSize.xs,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textMuted,
+    lineHeight: 16,
   },
   right: {
     alignItems: 'flex-end',

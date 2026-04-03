@@ -9,25 +9,48 @@ import {
   Platform,
   ScrollView,
   Animated,
-  Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
+import { AnimatedBackground } from '../../components/ui/AnimatedBackground';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
-import { BorderRadius, Spacing, Shadow } from '../../constants/theme';
+import { BorderRadius, Spacing } from '../../constants/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// ─── Eye icon ─────────────────────────────────────────────────────────────────
 
-// ─── Animated Input ────────────────────────────────────────────────────────────
+function EyeIcon({ visible, color }: { visible: boolean; color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      {visible ? (
+        <>
+          <Path d="M1 12C1 12 5 4 12 4C19 4 23 12 23 12C23 12 19 20 12 20C5 20 1 12 1 12Z"
+            stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+          <Path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
+            stroke={color} strokeWidth={1.8} />
+        </>
+      ) : (
+        <>
+          <Path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+            stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+          <Path d="M1 1l22 22" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+        </>
+      )}
+    </Svg>
+  );
+}
 
-interface AnimatedInputProps {
+// ─── Floating label input ─────────────────────────────────────────────────────
+
+interface FloatingInputProps {
+  label: string;
   value: string;
-  onChangeText: (text: string) => void;
-  placeholder: string;
+  onChangeText: (t: string) => void;
   secureTextEntry?: boolean;
   keyboardType?: 'email-address' | 'default';
   autoCapitalize?: 'none' | 'words' | 'sentences';
@@ -37,10 +60,10 @@ interface AnimatedInputProps {
   inputRef?: React.RefObject<TextInput | null>;
 }
 
-function AnimatedInput({
+function FloatingInput({
+  label,
   value,
   onChangeText,
-  placeholder,
   secureTextEntry = false,
   keyboardType = 'default',
   autoCapitalize = 'none',
@@ -48,72 +71,130 @@ function AnimatedInput({
   returnKeyType = 'next',
   onSubmitEditing,
   inputRef,
-}: AnimatedInputProps) {
-  const borderAnim = useRef(new Animated.Value(0)).current;
+}: FloatingInputProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const borderAnim = useRef(new Animated.Value(0)).current;
+  const labelAnim = useRef(new Animated.Value(value ? 1 : 0)).current;
 
   const handleFocus = () => {
     setIsFocused(true);
-    Animated.timing(borderAnim, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
+    Animated.parallel([
+      Animated.timing(borderAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
+      Animated.timing(labelAnim, { toValue: 1, duration: 150, useNativeDriver: false }),
+    ]).start();
   };
 
   const handleBlur = () => {
     setIsFocused(false);
-    Animated.timing(borderAnim, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
+    Animated.parallel([
+      Animated.timing(borderAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
+      Animated.timing(labelAnim, { toValue: value ? 1 : 0, duration: 150, useNativeDriver: false }),
+    ]).start();
   };
 
   const borderColor = borderAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [Colors.border, Colors.borderActive],
+    outputRange: [Colors.rim, Colors.electric],
+  });
+  const labelColor = borderAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [Colors.textTertiary, Colors.electric],
+  });
+  const glowOpacity = borderAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
   });
 
-  const shadowOpacity = borderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 0.35],
-  });
+  const isSecure = secureTextEntry && !showPassword;
 
   return (
-    <Animated.View
-      style={[
-        styles.inputWrapper,
-        {
-          borderColor,
-          shadowColor: Colors.primary,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity,
-          shadowRadius: 8,
-          elevation: isFocused ? 4 : 0,
-        },
-      ]}
-    >
-      <TextInput
-        ref={inputRef}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={Colors.textMuted}
-        secureTextEntry={secureTextEntry}
-        keyboardType={keyboardType}
-        autoCapitalize={autoCapitalize}
-        autoComplete={autoComplete}
-        returnKeyType={returnKeyType}
-        onSubmitEditing={onSubmitEditing}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        style={styles.input}
-        selectionColor={Colors.primary}
+    <View style={inputStyles.wrapper}>
+      {/* Focus glow */}
+      <Animated.View
+        style={[
+          inputStyles.glow,
+          { opacity: glowOpacity },
+        ]}
+        pointerEvents="none"
       />
-    </Animated.View>
+
+      <Animated.View style={[inputStyles.container, { borderColor }]}>
+        {/* Floating label */}
+        <Animated.Text style={[inputStyles.floatLabel, { color: labelColor }]}>
+          {label}
+        </Animated.Text>
+
+        <TextInput
+          ref={inputRef}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder=""
+          placeholderTextColor="transparent"
+          secureTextEntry={isSecure}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          style={inputStyles.input}
+          selectionColor={Colors.electric}
+        />
+
+        {/* Password toggle */}
+        {secureTextEntry && (
+          <TouchableOpacity
+            onPress={() => setShowPassword((v) => !v)}
+            style={inputStyles.eyeBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <EyeIcon visible={showPassword} color={isFocused ? Colors.electric : Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </Animated.View>
+    </View>
   );
 }
+
+const inputStyles = StyleSheet.create({
+  wrapper: { position: 'relative' },
+  glow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    backgroundColor: Colors.electricMist,
+    margin: -1,
+  },
+  container: {
+    height: 56,
+    backgroundColor: Colors.depth,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing[4],
+    overflow: 'hidden',
+  },
+  floatLabel: {
+    position: 'absolute',
+    left: Spacing[4],
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyMedium,
+    pointerEvents: 'none',
+  } as any,
+  input: {
+    flex: 1,
+    height: '100%',
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textPrimary,
+    paddingTop: 14,
+  },
+  eyeBtn: {
+    padding: 4,
+  },
+});
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 
@@ -141,10 +222,7 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Deep-space radial glow behind logo */}
-      <View style={styles.glowContainer} pointerEvents="none">
-        <View style={styles.glow} />
-      </View>
+      <AnimatedBackground />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -154,42 +232,30 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 40 },
+            { paddingTop: insets.top + 64, paddingBottom: insets.bottom + 48 },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Logo & Branding ───────────────────────────────────────────── */}
-          <View style={styles.brandSection}>
-            <View style={styles.logoRing}>
-              <LinearGradient
-                colors={Colors.gradientBlue}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.logoGradient}
-              >
-                <Text style={styles.logoLetter}>C</Text>
-              </LinearGradient>
-            </View>
-
-            <Text style={styles.wordmark}>Continuum</Text>
-            <Text style={styles.tagline}>Your health, understood.</Text>
+          {/* ── Logo ─────────────────────────────────────────────────────── */}
+          <View style={styles.logoSection}>
+            <Text style={styles.logoGlyph}>C</Text>
+            <Text style={styles.wordmark}>CONTINUUM</Text>
+            <Text style={styles.tagline}>Health Intelligence</Text>
           </View>
 
           {/* ── Form ─────────────────────────────────────────────────────── */}
           <View style={styles.formSection}>
-            <Text style={styles.formTitle}>Sign in</Text>
-
-            {error && (
+            {error ? (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{error}</Text>
               </View>
-            )}
+            ) : null}
 
-            <AnimatedInput
+            <FloatingInput
+              label="Email address"
               value={email}
               onChangeText={setEmail}
-              placeholder="Email address"
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
@@ -197,11 +263,11 @@ export default function LoginScreen() {
               onSubmitEditing={() => passwordRef.current?.focus()}
             />
 
-            <AnimatedInput
+            <FloatingInput
               inputRef={passwordRef}
+              label="Password"
               value={password}
               onChangeText={setPassword}
-              placeholder="Password"
               secureTextEntry
               autoComplete="password"
               returnKeyType="done"
@@ -216,24 +282,33 @@ export default function LoginScreen() {
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
-            {/* Primary CTA */}
+            {/* CTA */}
             <TouchableOpacity
               onPress={handleLogin}
               disabled={!canSubmit}
-              activeOpacity={0.85}
-              style={[styles.ctaWrapper, !canSubmit && styles.ctaDisabled, Shadow.blue]}
+              activeOpacity={0.88}
+              style={[styles.ctaWrap, !canSubmit && { opacity: 0.45 }]}
             >
               <LinearGradient
-                colors={Colors.gradientBlue}
+                colors={['#4F7EFF', '#3560E0']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.ctaGradient}
               >
-                <Text style={styles.ctaLabel}>
-                  {isLoading ? 'Signing in…' : 'Sign in'}
-                </Text>
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.ctaLabel}>Sign in</Text>
+                )}
               </LinearGradient>
             </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
           </View>
 
           {/* ── Footer ───────────────────────────────────────────────────── */}
@@ -249,99 +324,59 @@ export default function LoginScreen() {
   );
 }
 
-const LOGO_SIZE = 88;
-const GLOW_SIZE = SCREEN_WIDTH * 1.2;
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#000000',
   },
-  flex: {
-    flex: 1,
-  },
-  glowContainer: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  glow: {
-    width: GLOW_SIZE,
-    height: GLOW_SIZE,
-    borderRadius: GLOW_SIZE / 2,
-    backgroundColor: 'rgba(31, 111, 235, 0.07)',
-    marginTop: -GLOW_SIZE * 0.4,
-  },
+  flex: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: Spacing[6],
+    gap: Spacing[6],
   },
 
-  // ── Branding ──────────────────────────────────────────────────────────────
-  brandSection: {
+  // Logo
+  logoSection: {
     alignItems: 'center',
-    marginBottom: Spacing[10],
+    gap: Spacing[1],
+    marginBottom: Spacing[4],
   },
-  logoRing: {
-    width: LOGO_SIZE + 4,
-    height: LOGO_SIZE + 4,
-    borderRadius: (LOGO_SIZE + 4) / 2,
-    borderWidth: 1,
-    borderColor: 'rgba(56, 139, 253, 0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing[5],
+  logoGlyph: {
+    fontSize: 80,
+    fontFamily: FontFamily.displayExtraBold,
+    color: Colors.electric,
+    lineHeight: 86,
     ...Platform.select({
       ios: {
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 24,
+        textShadowColor: Colors.electricDeep,
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 16,
       },
-      android: { elevation: 8 },
     }),
   },
-  logoGradient: {
-    width: LOGO_SIZE,
-    height: LOGO_SIZE,
-    borderRadius: LOGO_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoLetter: {
-    fontSize: 44,
-    fontFamily: FontFamily.display,
-    color: '#FFFFFF',
-    lineHeight: 52,
-  },
   wordmark: {
-    fontSize: FontSize['3xl'],
-    fontFamily: FontFamily.display,
+    fontSize: 26,
+    fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
-    letterSpacing: 0.5,
-    marginBottom: Spacing[2],
+    letterSpacing: 8,
+    marginTop: Spacing[1],
   },
   tagline: {
-    fontSize: FontSize.md,
+    fontSize: 13,
     fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-    letterSpacing: 0.3,
+    color: Colors.textTertiary,
+    marginTop: 2,
   },
 
-  // ── Form ──────────────────────────────────────────────────────────────────
+  // Form
   formSection: {
     gap: Spacing[3],
   },
-  formTitle: {
-    fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing[1],
-  },
   errorBanner: {
-    backgroundColor: 'rgba(248, 81, 73, 0.12)',
+    backgroundColor: Colors.criticalGlow,
     borderWidth: 1,
-    borderColor: 'rgba(248, 81, 73, 0.3)',
+    borderColor: 'rgba(255,79,107,0.3)',
     borderRadius: BorderRadius.md,
     padding: Spacing[3],
   },
@@ -349,20 +384,7 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.critical,
-    lineHeight: 20,
-  },
-  inputWrapper: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  input: {
-    height: 52,
-    paddingHorizontal: Spacing[4],
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textPrimary,
+    lineHeight: 19,
   },
   forgotContainer: {
     alignSelf: 'flex-end',
@@ -371,34 +393,56 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: FontSize.sm,
     fontFamily: FontFamily.bodyMedium,
-    color: Colors.primary,
+    color: Colors.electric,
   },
-  ctaWrapper: {
-    borderRadius: BorderRadius.md,
+  ctaWrap: {
+    borderRadius: 16,
     overflow: 'hidden',
-    marginTop: Spacing[2],
-  },
-  ctaDisabled: {
-    opacity: 0.5,
+    marginTop: Spacing[1],
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.electric,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.45,
+        shadowRadius: 20,
+      },
+      android: { elevation: 8 },
+    }),
   },
   ctaGradient: {
-    height: 54,
+    height: 56,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 16,
   },
   ctaLabel: {
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.bodySemiBold,
+    fontSize: 16,
+    fontFamily: FontFamily.displaySemiBold,
     color: '#FFFFFF',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
+    marginTop: Spacing[1],
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.rim,
+  },
+  dividerText: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
   },
 
-  // ── Footer ────────────────────────────────────────────────────────────────
+  // Footer
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: Spacing[8],
   },
   footerText: {
     fontSize: FontSize.sm,
@@ -407,7 +451,7 @@ const styles = StyleSheet.create({
   },
   footerLink: {
     fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.primary,
+    fontFamily: FontFamily.displaySemiBold,
+    color: Colors.electric,
   },
 });
