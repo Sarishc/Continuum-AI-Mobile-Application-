@@ -49,6 +49,30 @@ export type HealthEntryType =
 
 export type SeverityLevel = 'low' | 'moderate' | 'high' | 'critical';
 
+// ─── Structured data returned by AI parsing of uploaded documents ─────────────
+
+export interface LabValue {
+  value: string;
+  unit?: string;
+  status?: 'normal' | 'borderline' | 'abnormal';
+}
+
+export interface StructuredMedication {
+  name: string;
+  dosage: string;
+  frequency: string;
+}
+
+export interface StructuredData {
+  summary?: string;
+  conditions?: string[];
+  symptoms?: string[];
+  medications?: StructuredMedication[];
+  lab_values?: Record<string, string>; // e.g. { 'HbA1c': '6.8%' }
+  risk_flags?: string[];
+  source_file?: string;
+}
+
 export interface HealthEntry {
   id: string;
   userId: string;
@@ -60,6 +84,7 @@ export interface HealthEntry {
   unit?: string;
   tags: string[];
   attachments: Attachment[];
+  structuredData?: StructuredData;
   recordedAt: string;
   createdAt: string;
 }

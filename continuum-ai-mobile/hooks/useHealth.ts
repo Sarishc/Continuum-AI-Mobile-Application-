@@ -3,6 +3,8 @@ import { useHealthStore } from '../store/healthStore';
 import { healthApi } from '../api/health';
 import type { HealthEntry, HealthProfile } from '../types';
 
+const now = Date.now();
+
 // ─── Mock data (used when API is unreachable) ─────────────────────────────────
 
 const MOCK_PROFILE: HealthProfile = {
@@ -16,46 +18,130 @@ const MOCK_PROFILE: HealthProfile = {
   updatedAt: new Date().toISOString(),
 };
 
+const day = (d: number) => new Date(now - d * 24 * 60 * 60 * 1000).toISOString();
+
 const MOCK_TIMELINE: HealthEntry[] = [
   {
     id: 't1',
     userId: 'mock-user',
     type: 'lab_result',
     title: 'HbA1c Blood Panel',
-    description: 'Fasting glucose 118 mg/dL, HbA1c 6.8% — slightly above target range.',
-    severity: 'moderate',
+    description: 'Fasting glucose 118 mg/dL, HbA1c 6.8% — above target range.',
+    severity: 'high',
     value: 6.8,
     unit: '%',
     tags: ['glucose', 'diabetes'],
     attachments: [],
-    recordedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    structuredData: {
+      summary: 'HbA1c elevated at 6.8%, consistent with pre-diabetic range. Fasting glucose borderline at 118 mg/dL. Recommend dietary review and follow-up in 3 months.',
+      conditions: ['Pre-diabetes'],
+      lab_values: { 'HbA1c': '6.8%', 'Fasting Glucose': '118 mg/dL', 'eGFR': '92 mL/min' },
+      risk_flags: ['HbA1c above normal threshold (>6.4%)', 'Fasting glucose borderline elevated'],
+      source_file: 'lab_results_panel_q1.pdf',
+    },
+    recordedAt: day(0),
+    createdAt: day(0),
   },
   {
     id: 't2',
     userId: 'mock-user',
     type: 'symptom',
-    title: 'Fatigue & Mild Headache',
-    description: 'Persistent fatigue since morning, dull frontal headache. Possible dehydration.',
-    severity: 'low',
-    tags: ['fatigue', 'headache'],
+    title: 'Frequent Urination & Thirst',
+    description: 'Classic symptoms associated with elevated blood glucose.',
+    severity: 'moderate',
+    tags: ['urination', 'thirst', 'fatigue'],
     attachments: [],
-    recordedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+    structuredData: {
+      summary: 'Patient reports frequent urination, increased thirst, and persistent fatigue over the past 3 days. Symptoms consistent with hyperglycaemia.',
+      symptoms: ['Frequent urination', 'Increased thirst', 'Fatigue', 'Blurred vision'],
+      risk_flags: [],
+    },
+    recordedAt: day(1),
+    createdAt: day(1),
   },
   {
     id: 't3',
     userId: 'mock-user',
-    type: 'vital',
-    title: 'Blood Pressure Reading',
-    description: '142/88 mmHg — elevated. Taken after morning walk.',
+    type: 'lab_result',
+    title: 'Annual Physical Report',
+    description: 'Annual physical examination. BP 138/88 mmHg.',
     severity: 'moderate',
-    value: '142/88',
+    value: '138/88',
     unit: 'mmHg',
-    tags: ['blood-pressure', 'hypertension'],
+    tags: ['blood-pressure', 'hypertension', 'annual'],
     attachments: [],
-    recordedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+    structuredData: {
+      summary: 'Annual physical examination report. Blood pressure 138/88 mmHg consistent with Stage 1 hypertension. BMI 27.4 (overweight). All other values within normal limits.',
+      conditions: ['Hypertension', 'Pre-diabetes'],
+      medications: [
+        { name: 'Metformin', dosage: '500mg', frequency: 'twice daily' },
+        { name: 'Lisinopril', dosage: '10mg', frequency: 'once daily' },
+      ],
+      lab_values: { 'Blood Pressure': '138/88 mmHg', 'BMI': '27.4', 'Heart Rate': '74 bpm' },
+      risk_flags: ['Stage 1 hypertension', 'BMI in overweight range'],
+      source_file: 'annual_physical_2026.pdf',
+    },
+    recordedAt: day(3),
+    createdAt: day(3),
+  },
+  {
+    id: 't4',
+    userId: 'mock-user',
+    type: 'note',
+    title: 'Started Daily Walking Routine',
+    description: 'Started new walking routine — 20 minutes daily.',
+    severity: 'low',
+    tags: ['exercise', 'lifestyle'],
+    attachments: [],
+    structuredData: {
+      summary: 'Started new walking routine — 20 minutes daily after dinner. Feeling more energetic after first week. Plan to increase to 30 minutes next month.',
+      risk_flags: [],
+    },
+    recordedAt: day(7),
+    createdAt: day(7),
+  },
+  {
+    id: 't5',
+    userId: 'mock-user',
+    type: 'lab_result',
+    title: 'Lipid Panel',
+    description: 'Total cholesterol 204 mg/dL, LDL borderline high.',
+    severity: 'moderate',
+    tags: ['cholesterol', 'lipids'],
+    attachments: [],
+    structuredData: {
+      summary: 'Lipid panel shows borderline high LDL cholesterol at 128 mg/dL. HDL satisfactory at 52 mg/dL. Total cholesterol 204 mg/dL — borderline high. Dietary modifications recommended.',
+      lab_values: {
+        'Total Cholesterol': '204 mg/dL',
+        'LDL': '128 mg/dL',
+        'HDL': '52 mg/dL',
+        'Triglycerides': '118 mg/dL',
+      },
+      risk_flags: ['LDL borderline high (>120 mg/dL)', 'Total cholesterol borderline high'],
+      source_file: 'lipid_panel_march.pdf',
+    },
+    recordedAt: day(14),
+    createdAt: day(14),
+  },
+  {
+    id: 't6',
+    userId: 'mock-user',
+    type: 'appointment',
+    title: 'Seasonal Allergy Follow-up',
+    description: 'Follow-up for seasonal allergies. Symptoms well controlled.',
+    severity: 'low',
+    tags: ['allergy', 'follow-up'],
+    attachments: [],
+    structuredData: {
+      summary: 'Follow-up visit for seasonal allergies. Symptoms well controlled on current Cetirizine regimen. No changes required. Next review in 6 months.',
+      conditions: ['Seasonal allergies'],
+      medications: [
+        { name: 'Cetirizine', dosage: '10mg', frequency: 'as needed' },
+      ],
+      risk_flags: [],
+    },
+    recordedAt: day(35),
+    createdAt: day(35),
   },
 ];
 
