@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,11 @@ import {
   LayoutAnimation,
   UIManager,
   Platform,
+  Alert,
 } from 'react-native';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { format, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
@@ -316,15 +320,48 @@ interface EntryCardProps {
   isLast: boolean;
 }
 
-function EntryCard({ entry, isLast }: EntryCardProps) {
+const EntryCard = React.memo(function EntryCard({ entry, isLast }: EntryCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const swipeRef = useRef<Swipeable>(null);
   const typeConfig = ENTRY_TYPE_CONFIG[entry.type];
   const hasStructured = !!entry.structuredData;
+  const deleteEntry = useHealthStore((s) => s.deleteEntry);
+  const setPendingChatContext = useHealthStore((s) => s.setPendingChatContext);
 
   const toggleExpand = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((v) => !v);
   }, []);
+
+  const handleDelete = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    Alert.alert(
+      'Delete Entry',
+      'This health entry will be permanently removed.',
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => swipeRef.current?.close() },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteEntry(entry.id) },
+      ]
+    );
+  }, [entry.id, deleteEntry]);
+
+  const handleAskAI = useCallback(() => {
+    const dateStr = format(new Date(entry.recordedAt), 'MMM d, yyyy');
+    setPendingChatContext(`Tell me about my ${entry.type.replace('_', ' ')} from ${dateStr}: ${entry.title}${entry.description ? '. ' + entry.description : ''}`);
+    router.push('/(tabs)/chat' as any);
+  }, [entry, setPendingChatContext]);
+
+  const renderRightActions = useCallback(() => (
+    <TouchableOpacity
+      onPress={handleDelete}
+      style={styles.swipeDeleteBtn}
+      activeOpacity={0.85}
+    >
+      <Text style={styles.swipeDeleteIcon}>🗑️</Text>
+      <Text style={styles.swipeDeleteLabel}>DELETE</Text>
+    </TouchableOpacity>
+  ), [handleDelete]);
 
   const timeLabel = format(new Date(entry.recordedAt), 'h:mm a');
 
@@ -338,69 +375,88 @@ function EntryCard({ entry, isLast }: EntryCardProps) {
         {!isLast && <View style={styles.timelineLine} />}
       </View>
 
-      {/* Card */}
-      <View style={[styles.card, expanded && styles.cardExpanded]}>
-        <TouchableOpacity
-          onPress={hasStructured ? toggleExpand : undefined}
-          activeOpacity={hasStructured ? 0.75 : 1}
-          style={styles.cardTouchable}
-        >
-          {/* Type pill + severity */}
-          <View style={styles.cardTopRow}>
-            <View style={[styles.typePill, { backgroundColor: typeConfig.bg }]}>
-              <Text style={[styles.typePillText, { color: typeConfig.color }]}>
-                {typeConfig.label}
+      {/* Card wrapped in Swipeable */}
+      <Swipeable
+        ref={swipeRef}
+        renderRightActions={renderRightActions}
+        onSwipeableOpen={handleDelete}
+        friction={2}
+        rightThreshold={40}
+        overshootRight={false}
+        containerStyle={styles.swipeableContainer}
+      >
+        <View style={[styles.card, expanded && styles.cardExpanded]}>
+          <TouchableOpacity
+            onPress={hasStructured ? toggleExpand : undefined}
+            activeOpacity={hasStructured ? 0.75 : 1}
+            style={styles.cardTouchable}
+          >
+            {/* Type pill + severity */}
+            <View style={styles.cardTopRow}>
+              <View style={[styles.typePill, { backgroundColor: typeConfig.bg }]}>
+                <Text style={[styles.typePillText, { color: typeConfig.color }]}>
+                  {typeConfig.label}
+                </Text>
+              </View>
+              <View style={styles.cardTopRight}>
+                {entry.severity && <SeverityBadge severity={entry.severity} />}
+                {hasStructured && (
+                  <ChevronDownIcon color={Colors.textMuted} flipped={expanded} />
+                )}
+              </View>
+            </View>
+
+            {/* Title */}
+            <Text style={styles.cardTitle}>{entry.title}</Text>
+
+            {/* Value + unit */}
+            {entry.value !== undefined ? (
+              <Text style={styles.cardValue}>
+                {entry.value}
+                {entry.unit ? <Text style={styles.cardUnit}> {entry.unit}</Text> : null}
               </Text>
-            </View>
-            <View style={styles.cardTopRight}>
-              {entry.severity && <SeverityBadge severity={entry.severity} />}
-              {hasStructured && (
-                <ChevronDownIcon color={Colors.textMuted} flipped={expanded} />
-              )}
-            </View>
-          </View>
+            ) : null}
 
-          {/* Title */}
-          <Text style={styles.cardTitle}>{entry.title}</Text>
+            {/* Description */}
+            {entry.description ? (
+              <Text style={styles.cardDesc} numberOfLines={expanded ? undefined : 2}>
+                {entry.description}
+              </Text>
+            ) : null}
 
-          {/* Value + unit */}
-          {entry.value !== undefined ? (
-            <Text style={styles.cardValue}>
-              {entry.value}
-              {entry.unit ? <Text style={styles.cardUnit}> {entry.unit}</Text> : null}
-            </Text>
+            {/* Tags */}
+            {entry.tags.length > 0 ? (
+              <View style={styles.tagsRow}>
+                {entry.tags.map((tag) => (
+                  <View key={tag} style={styles.entryTag}>
+                    <Text style={styles.entryTagText}>#{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {/* Time */}
+            <Text style={styles.cardTime}>{timeLabel}</Text>
+          </TouchableOpacity>
+
+          {/* Expanded structured data + Ask AI */}
+          {expanded && entry.structuredData ? (
+            <>
+              <StructuredDataPanel data={entry.structuredData} />
+              <TouchableOpacity
+                onPress={handleAskAI}
+                activeOpacity={0.8}
+                style={styles.askAIBtn}
+              >
+                <Text style={styles.askAIBtnText}>Ask AI About This →</Text>
+              </TouchableOpacity>
+            </>
           ) : null}
-
-          {/* Description */}
-          {entry.description ? (
-            <Text style={styles.cardDesc} numberOfLines={expanded ? undefined : 2}>
-              {entry.description}
-            </Text>
-          ) : null}
-
-          {/* Tags */}
-          {entry.tags.length > 0 ? (
-            <View style={styles.tagsRow}>
-              {entry.tags.map((tag) => (
-                <View key={tag} style={styles.entryTag}>
-                  <Text style={styles.entryTagText}>#{tag}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-
-          {/* Time */}
-          <Text style={styles.cardTime}>{timeLabel}</Text>
-        </TouchableOpacity>
-
-        {/* Expanded structured data */}
-        {expanded && entry.structuredData ? (
-          <StructuredDataPanel data={entry.structuredData} />
-        ) : null}
-      </View>
+        </View>
+      </Swipeable>
     </View>
   );
-}
+});
 
 // ─── Date group header ────────────────────────────────────────────────────────
 
@@ -497,7 +553,7 @@ export default function TimelineScreen() {
   }, [refetchAll]);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <View style={[styles.root, { paddingTop: insets.top + 16 }]}>
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -518,12 +574,14 @@ export default function TimelineScreen() {
           { paddingBottom: insets.bottom + 110 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
             onRefresh={handleRefresh}
-            tintColor={Colors.primary}
-            colors={[Colors.primary]}
+            tintColor={Colors.electric}
+            colors={[Colors.electric]}
+            progressBackgroundColor={Colors.surface}
           />
         }
       >
@@ -626,6 +684,42 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     letterSpacing: 0.8,
     textTransform: 'uppercase',
+  },
+
+  // ── Swipe-to-delete
+  swipeableContainer: { flex: 1 },
+  swipeDeleteBtn: {
+    width: 80,
+    backgroundColor: Colors.critical,
+    borderRadius: BorderRadius.md,
+    marginLeft: Spacing[2],
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  swipeDeleteIcon: { fontSize: 22 },
+  swipeDeleteLabel: {
+    fontSize: 11,
+    fontFamily: FontFamily.bodyMedium,
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+
+  // ── Ask AI button
+  askAIBtn: {
+    margin: Spacing[3],
+    marginTop: 0,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.electricMist,
+    borderWidth: 1,
+    borderColor: Colors.electric,
+    alignItems: 'center',
+  },
+  askAIBtnText: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.electric,
   },
 
   // ── Entry row + timeline

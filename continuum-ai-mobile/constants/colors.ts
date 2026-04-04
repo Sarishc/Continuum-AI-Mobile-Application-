@@ -69,6 +69,7 @@ export const Colors = {
   borderActive: Electric.electric,
 
   // Brand
+  ...Electric,
   primary: Electric.electric,
   primaryBright: Electric.electricBright,
   primaryDeep: Electric.electricDeep,

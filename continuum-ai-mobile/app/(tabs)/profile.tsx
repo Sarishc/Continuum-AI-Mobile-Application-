@@ -534,7 +534,7 @@ export default function ProfileScreen() {
   const engineLabel = engineMode === 'ai' ? 'AI Mode' : 'Rule Engine';
 
   return (
-    <View style={[profileStyles.root, { paddingTop: insets.top }]}>
+    <View style={[profileStyles.root, { paddingTop: insets.top + 16 }]}>
       <ScrollView
         contentContainerStyle={[profileStyles.scroll, { paddingBottom: insets.bottom + 110 }]}
         showsVerticalScrollIndicator={false}

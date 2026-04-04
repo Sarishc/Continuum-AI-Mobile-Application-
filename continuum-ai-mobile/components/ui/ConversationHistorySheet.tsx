@@ -7,6 +7,7 @@ import {
   FlatList,
   StyleSheet,
   Dimensions,
+  BackHandler,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -112,6 +113,14 @@ export function ConversationHistorySheet({
         easing: Easing.in(Easing.cubic),
       });
     }
+  }, [visible]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (visible) { handleClose(); return true; }
+      return false;
+    });
+    return () => sub.remove();
   }, [visible]);
 
   const handleClose = () => {

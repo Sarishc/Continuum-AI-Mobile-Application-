@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
+import { useHealthStore } from '../../store/healthStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BAR_WIDTH = SCREEN_WIDTH - 32;
@@ -156,9 +157,10 @@ interface TabItemProps {
   label: string;
   isFocused: boolean;
   onPress: () => void;
+  badge?: number;
 }
 
-function TabItem({ Icon, label, isFocused, onPress }: TabItemProps) {
+function TabItem({ Icon, label, isFocused, onPress, badge }: TabItemProps) {
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -185,7 +187,14 @@ function TabItem({ Icon, label, isFocused, onPress }: TabItemProps) {
       accessibilityState={{ selected: isFocused }}
     >
       <Animated.View style={[styles.tabContent, animatedStyle]}>
-        <Icon color={iconColor} filled={isFocused} />
+        <View>
+          <Icon color={iconColor} filled={isFocused} />
+          {!!badge && badge > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{badge > 9 ? '9+' : String(badge)}</Text>
+            </View>
+          )}
+        </View>
         {isFocused && (
           <Text style={styles.tabLabel}>{label}</Text>
         )}
@@ -199,6 +208,8 @@ function TabItem({ Icon, label, isFocused, onPress }: TabItemProps) {
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const indicatorX = useSharedValue(state.index * TAB_WIDTH + (TAB_WIDTH - INDICATOR_SIZE) / 2);
+  const insights = useHealthStore((s) => s.insights);
+  const unreadCount = useMemo(() => insights.filter((i) => !i.is_read && !i.dismissed).length, [insights]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: indicatorX.value }],
@@ -238,6 +249,9 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               }
             };
 
+            // index 3 = Insights tab
+            const badge = index === 3 ? unreadCount : undefined;
+
             return (
               <TabItem
                 key={route.key}
@@ -245,6 +259,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 label={label}
                 isFocused={isFocused}
                 onPress={onPress}
+                badge={badge}
               />
             );
           })}
@@ -315,5 +330,25 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.displayMedium,
     color: Colors.electric,
     letterSpacing: 0.2,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: Colors.critical,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: Colors.elevated,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontFamily: FontFamily.displayBold,
+    color: '#FFFFFF',
+    lineHeight: 11,
   },
 });

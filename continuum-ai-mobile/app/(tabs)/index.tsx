@@ -18,7 +18,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { format } from 'date-fns';
 
 import { useAuthStore } from '../../store/authStore';
-import { useHealth } from '../../hooks/useHealth';
+import { useHealth, calculateStreak } from '../../hooks/useHealth';
 import { useInsights } from '../../hooks/useInsights';
 
 import { HealthScoreRing } from '../../components/ui/HealthScoreRing';
@@ -449,10 +449,10 @@ export default function DashboardScreen() {
                   onPress={() => router.push('/(tabs)/insights')}
                 />
                 <MetricCard
-                  value="5"
+                  value={String(calculateStreak(timeline))}
                   valueColor={Colors.electric}
                   label="Day Streak"
-                  sub="🔥 Keep it up"
+                  sub={calculateStreak(timeline) > 0 ? '🔥 Keep it up' : 'Start today'}
                 />
                 <MetricCard
                   value={timeline.length > 0 ? 'Today' : 'None'}

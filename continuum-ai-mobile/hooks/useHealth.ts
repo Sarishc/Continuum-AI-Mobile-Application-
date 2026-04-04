@@ -1,7 +1,43 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { format, subDays } from 'date-fns';
 import { useHealthStore } from '../store/healthStore';
 import { healthApi } from '../api/health';
-import type { HealthEntry, HealthProfile } from '../types';
+import type { HealthEntry, HealthProfile, Insight } from '../types';
+
+// ─── Health score calculation ─────────────────────────────────────────────────
+
+function calculateHealthScore(insights: Insight[]): number {
+  let score = 100;
+  const criticalCount = insights.filter((i) => i.severity === 'critical' && !i.dismissed).length;
+  const highCount = insights.filter((i) => i.severity === 'high' && !i.dismissed).length;
+  const mediumCount = insights.filter((i) => i.severity === 'moderate' && !i.dismissed).length;
+  score -= criticalCount * 20;
+  score -= highCount * 10;
+  score -= mediumCount * 5;
+  return Math.max(10, Math.min(100, score));
+}
+
+// ─── Streak calculation ───────────────────────────────────────────────────────
+
+export function calculateStreak(entries: HealthEntry[]): number {
+  if (!entries.length) return 0;
+  const dates = [...new Set(
+    entries.map((e) => format(new Date(e.recordedAt), 'yyyy-MM-dd'))
+  )].sort().reverse();
+  if (!dates.length) return 0;
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+  if (dates[0] !== today && dates[0] !== yesterday) return 0;
+  let streak = 0;
+  let checkDate = dates[0];
+  for (const date of dates) {
+    if (date === checkDate) {
+      streak++;
+      checkDate = format(subDays(new Date(checkDate), 1), 'yyyy-MM-dd');
+    } else break;
+  }
+  return streak;
+}
 
 const now = Date.now();
 
@@ -159,6 +195,7 @@ export function useHealth() {
     healthProfile,
     timeline,
     healthScore,
+    insights,
   } = useHealthStore();
 
   const profileQuery = useQuery({
@@ -198,8 +235,11 @@ export function useHealth() {
         setHealthScore(data.score);
         return data;
       } catch {
-        setHealthScore(MOCK_SCORE);
-        return { score: MOCK_SCORE, breakdown: {} };
+        // Calculate score from insights when API unavailable
+        const calculated = calculateHealthScore(insights.length > 0 ? insights : []);
+        const score = insights.length > 0 ? calculated : MOCK_SCORE;
+        setHealthScore(score);
+        return { score, breakdown: {} };
       }
     },
   });

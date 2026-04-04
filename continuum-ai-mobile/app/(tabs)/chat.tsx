@@ -34,6 +34,7 @@ import Animated, {
   withDelay,
   Easing,
   interpolate,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -253,6 +254,7 @@ function TypingDot({ delay }: { delay: number }) {
         false
       )
     );
+    return () => cancelAnimation(scale);
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -273,6 +275,7 @@ function ScanLine() {
       -1,
       false
     );
+    return () => cancelAnimation(translateX);
   }, []);
   const style = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
@@ -430,7 +433,7 @@ interface MessageBubbleProps {
   onReasoningToggle: (id: string) => void;
 }
 
-function MessageBubble({ message, onSpecialistPress, onReasoningToggle }: MessageBubbleProps) {
+const MessageBubble = React.memo(function MessageBubble({ message, onSpecialistPress, onReasoningToggle }: MessageBubbleProps) {
   const { role, content, confidence, reasoning, disclaimer, specialist,
           attachment, reasoningExpanded, timestamp } = message;
 
@@ -523,7 +526,7 @@ function MessageBubble({ message, onSpecialistPress, onReasoningToggle }: Messag
       </View>
     </Animated.View>
   );
-}
+});
 
 const msgStyles = StyleSheet.create({
   // System
@@ -662,6 +665,7 @@ function EmptyState({ onPromptSelect }: EmptyStateProps) {
       {/* Suggestion rows */}
       <View style={emptyStyles.suggestions}>
         {QUICK_PROMPTS.map((prompt, i) => (
+
           <Animated.View key={prompt} entering={FadeInUp.delay(i * 60).duration(300)}>
             <TouchableOpacity
               onPress={() => {
@@ -676,6 +680,11 @@ function EmptyState({ onPromptSelect }: EmptyStateProps) {
             </TouchableOpacity>
           </Animated.View>
         ))}
+      </View>
+
+      {/* Powered by Claude badge */}
+      <View style={emptyStyles.claudeBadge}>
+        <Text style={emptyStyles.claudeBadgeText}>POWERED BY CLAUDE</Text>
       </View>
     </Animated.View>
   );
@@ -743,6 +752,21 @@ const emptyStyles = StyleSheet.create({
     fontSize: FontSize.md,
     color: Colors.textMuted,
     fontFamily: FontFamily.bodyMedium,
+  },
+  claudeBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.rim,
+    marginTop: Spacing[2],
+  },
+  claudeBadgeText: {
+    fontSize: 10,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    letterSpacing: 1.5,
   },
 });
 
@@ -893,6 +917,8 @@ export default function ChatScreen() {
     setEngineMode,
     setTyping,
     archiveCurrentConversation,
+    pendingChatContext,
+    setPendingChatContext,
   } = useHealthStore();
 
   const [inputText, setInputText] = useState('');
@@ -904,6 +930,15 @@ export default function ChatScreen() {
 
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const inputRef = useRef<TextInput>(null);
+
+  // Pre-fill from pendingChatContext (set by insights/timeline "Ask AI")
+  useEffect(() => {
+    if (pendingChatContext) {
+      setInputText(pendingChatContext);
+      setPendingChatContext(null);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [pendingChatContext]);
 
   // Scroll to bottom whenever messages change
   useEffect(() => {

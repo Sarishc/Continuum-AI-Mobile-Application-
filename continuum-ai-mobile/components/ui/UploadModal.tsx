@@ -10,6 +10,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  BackHandler,
   Animated as RNAnimated,
 } from 'react-native';
 import Animated, {
@@ -17,8 +18,12 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withRepeat,
   runOnJS,
+  cancelAnimation,
   Easing,
+  FadeIn,
+  FadeOut,
 } from 'react-native-reanimated';
 import * as DocumentPicker from 'expo-document-picker';
 import { useQueryClient } from '@tanstack/react-query';
@@ -98,6 +103,95 @@ function CheckCircleIcon() {
   );
 }
 
+// ─── Spinning arc ─────────────────────────────────────────────────────────────
+
+function SpinningArc() {
+  const rotate = useSharedValue(0);
+  useEffect(() => {
+    rotate.value = withRepeat(
+      withTiming(360, { duration: 1000, easing: Easing.linear }),
+      -1,
+      false
+    );
+    return () => cancelAnimation(rotate);
+  }, []);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotate.value}deg` }],
+  }));
+  return (
+    <Animated.View style={[uploadStyles.arcOuter, style]}>
+      <View style={uploadStyles.arcInner} />
+    </Animated.View>
+  );
+}
+
+// ─── Spring checkmark ─────────────────────────────────────────────────────────
+
+function SpringCheckmark() {
+  const scale = useSharedValue(0);
+  useEffect(() => {
+    scale.value = withSpring(1, { damping: 10, stiffness: 180, mass: 0.8 });
+  }, []);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return (
+    <Animated.View style={[uploadStyles.checkCircle, style]}>
+      <Svg width={32} height={32} viewBox="0 0 32 32" fill="none">
+        <Path d="M8 16L13 21L24 11" stroke={Colors.positive} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+// ─── Error X ──────────────────────────────────────────────────────────────────
+
+function ErrorX() {
+  const scale = useSharedValue(0);
+  useEffect(() => {
+    scale.value = withSpring(1, { damping: 10, stiffness: 180 });
+  }, []);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return (
+    <Animated.View style={[uploadStyles.errorCircle, style]}>
+      <Svg width={32} height={32} viewBox="0 0 32 32" fill="none">
+        <Path d="M10 10L22 22M22 10L10 22" stroke={Colors.critical} strokeWidth={2.5} strokeLinecap="round" />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+const uploadStyles = StyleSheet.create({
+  arcOuter: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 3,
+    borderColor: 'transparent',
+    borderTopColor: Colors.electric,
+    borderRightColor: Colors.electricMist,
+  },
+  arcInner: { flex: 1 },
+  checkCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.positiveGlow,
+    borderWidth: 1.5,
+    borderColor: Colors.positive,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.criticalGlow,
+    borderWidth: 1.5,
+    borderColor: Colors.critical,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
 function ChevronRightIcon() {
   return (
     <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
@@ -168,7 +262,7 @@ function OptionRow({ icon, iconBg, title, subtitle, onPress, disabled }: OptionR
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-type UploadMode = 'menu' | 'note' | 'success';
+type UploadMode = 'menu' | 'note' | 'uploading' | 'success' | 'error';
 
 export interface UploadModalProps {
   visible: boolean;
@@ -183,6 +277,7 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
   const [mode, setMode] = useState<UploadMode>('menu');
   const [noteText, setNoteText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingFileName, setUploadingFileName] = useState('');
 
   // Sheet slide animation
   const translateY = useSharedValue(MODAL_HEIGHT);
@@ -212,6 +307,15 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
     );
   }, [onClose]);
 
+  // BackHandler for Android
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (visible) { handleClose(); return true; }
+      return false;
+    });
+    return () => sub.remove();
+  }, [visible, handleClose]);
+
   const handleSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ['health', 'timeline'] });
     queryClient.invalidateQueries({ queryKey: ['insights'] });
@@ -220,7 +324,7 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
     setTimeout(() => {
       handleClose();
       showToast('Data added — analysing…', 'info');
-    }, 1500);
+    }, 1800);
   };
 
   // ── Upload document ────────────────────────────────────────────────────────
@@ -232,8 +336,10 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
       });
       if (result.canceled) return;
 
-      setIsSubmitting(true);
       const file = result.assets[0];
+      setUploadingFileName(file.name ?? 'document');
+      setMode('uploading');
+      setIsSubmitting(true);
       try {
         const fd = new FormData();
         fd.append('file', {
@@ -244,8 +350,9 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
         fd.append('type', 'lab_result');
         fd.append('recorded_at', new Date().toISOString());
         await healthApi.uploadEntry(fd);
+        handleSuccess();
       } catch {
-        // Offline fallback
+        // Offline fallback — still show success
         addEntry({
           id: `local-${Date.now()}`,
           userId: 'local',
@@ -256,10 +363,10 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
           recordedAt: new Date().toISOString(),
           createdAt: new Date().toISOString(),
         });
+        handleSuccess();
       }
-      handleSuccess();
     } catch {
-      // User cancelled or permission denied
+      setMode('error');
     } finally {
       setIsSubmitting(false);
     }
@@ -329,15 +436,38 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
               <View style={styles.handle} />
             </View>
 
+            {/* ── Uploading state ──────────────────────────────────────── */}
+            {mode === 'uploading' && (
+              <Animated.View entering={FadeIn.duration(200)} style={styles.successContainer}>
+                <SpinningArc />
+                <Text style={styles.uploadingLabel}>UPLOADING</Text>
+                <Text style={styles.uploadingFile} numberOfLines={1}>{uploadingFileName}</Text>
+              </Animated.View>
+            )}
+
             {/* ── Success state ────────────────────────────────────────── */}
             {mode === 'success' && (
-              <View style={styles.successContainer}>
-                <CheckCircleIcon />
-                <Text style={styles.successTitle}>Data Added</Text>
-                <Text style={styles.successSub}>
-                  Continuum AI is analysing your new data for insights.
-                </Text>
-              </View>
+              <Animated.View entering={FadeIn.duration(200)} style={styles.successContainer}>
+                <SpringCheckmark />
+                <Text style={styles.successBigWord}>ADDED</Text>
+                <Text style={styles.successSub}>Analysing your data…</Text>
+              </Animated.View>
+            )}
+
+            {/* ── Error state ──────────────────────────────────────────── */}
+            {mode === 'error' && (
+              <Animated.View entering={FadeIn.duration(200)} style={styles.successContainer}>
+                <ErrorX />
+                <Text style={[styles.successBigWord, { color: Colors.critical }]}>FAILED</Text>
+                <Text style={styles.successSub}>Please try again</Text>
+                <TouchableOpacity
+                  onPress={() => setMode('menu')}
+                  activeOpacity={0.8}
+                  style={styles.retryBtn}
+                >
+                  <Text style={styles.retryLabel}>Retry</Text>
+                </TouchableOpacity>
+              </Animated.View>
             )}
 
             {/* ── Menu state ───────────────────────────────────────────── */}
@@ -462,7 +592,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceElevated,
   },
 
-  // ── Success ────────────────────────────────────────────────────────────────
+  // ── Success / Uploading / Error ────────────────────────────────────────────
   successContainer: {
     flex: 1,
     alignItems: 'center',
@@ -470,17 +600,43 @@ const styles = StyleSheet.create({
     gap: Spacing[3],
     paddingHorizontal: Spacing[8],
   },
-  successTitle: {
-    fontSize: FontSize.xl,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textPrimary,
+  uploadingLabel: {
+    fontSize: 12,
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.textTertiary,
+    letterSpacing: 2,
+    marginTop: Spacing[2],
+  },
+  uploadingFile: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    maxWidth: 200,
+  },
+  successBigWord: {
+    fontSize: 28,
+    fontFamily: FontFamily.displayBold,
+    color: Colors.positive,
+    letterSpacing: 1,
   },
   successSub: {
-    fontSize: FontSize.md,
+    fontSize: FontSize.sm,
     fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
+    color: Colors.textMuted,
     textAlign: 'center',
-    lineHeight: 22,
+  },
+  retryBtn: {
+    marginTop: Spacing[2],
+    paddingHorizontal: Spacing[6],
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.electric,
+  },
+  retryLabel: {
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.bodySemiBold,
+    color: Colors.electric,
   },
 
   // ── Menu ───────────────────────────────────────────────────────────────────

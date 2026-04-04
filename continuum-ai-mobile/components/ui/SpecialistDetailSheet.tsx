@@ -8,7 +8,9 @@ import {
   Dimensions,
   Platform,
   Alert,
+  BackHandler,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -108,6 +110,7 @@ export function SpecialistDetailSheet({
   specialist,
   onClose,
 }: SpecialistDetailSheetProps) {
+  const router = useRouter();
   const translateY = useSharedValue(SHEET_HEIGHT);
 
   useEffect(() => {
@@ -119,6 +122,14 @@ export function SpecialistDetailSheet({
         easing: Easing.in(Easing.cubic),
       });
     }
+  }, [visible]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (visible) { handleClose(); return true; }
+      return false;
+    });
+    return () => sub.remove();
   }, [visible]);
 
   const handleClose = () => {
@@ -135,7 +146,8 @@ export function SpecialistDetailSheet({
 
   const handleFindSpecialist = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Coming Soon', 'Doctor network coming soon.');
+    handleClose();
+    setTimeout(() => router.push('/(tabs)/insights' as any), 300);
   };
 
   if (!specialist) return null;

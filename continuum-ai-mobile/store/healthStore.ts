@@ -20,6 +20,7 @@ interface HealthState {
   currentConversation: ChatMessage[];
   engineMode: EngineMode;
   isAITyping: boolean;
+  pendingChatContext: string | null;
 
   // ── Health actions ───────────────────────────────────────────────────────
   setProfile: (profile: HealthProfile) => void;
@@ -30,6 +31,7 @@ interface HealthState {
   markAllInsightsRead: () => void;
   setTimeline: (entries: HealthEntry[]) => void;
   addEntry: (entry: HealthEntry) => void;
+  deleteEntry: (id: string) => void;
   setConversations: (conversations: Conversation[]) => void;
   addConversation: (conversation: Conversation) => void;
   setHealthScore: (score: number) => void;
@@ -42,6 +44,7 @@ interface HealthState {
   clearConversation: () => void;
   loadConversation: (messages: ChatMessage[]) => void;
   archiveCurrentConversation: () => void;
+  setPendingChatContext: (text: string | null) => void;
 
   // ── Global reset ─────────────────────────────────────────────────────────
   reset: () => void;
@@ -56,6 +59,7 @@ const initialState = {
   currentConversation: [],
   engineMode: 'ai' as EngineMode,
   isAITyping: false,
+  pendingChatContext: null as string | null,
 };
 
 export const useHealthStore = create<HealthState>((set, get) => ({
@@ -96,6 +100,11 @@ export const useHealthStore = create<HealthState>((set, get) => ({
         (a, b) =>
           new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
       ),
+    })),
+
+  deleteEntry: (id) =>
+    set((state) => ({
+      timeline: state.timeline.filter((e) => e.id !== id),
     })),
 
   setConversations: (conversations) => set({ conversations }),
@@ -139,6 +148,8 @@ export const useHealthStore = create<HealthState>((set, get) => ({
 
   loadConversation: (messages) =>
     set({ currentConversation: messages, isAITyping: false }),
+
+  setPendingChatContext: (text) => set({ pendingChatContext: text }),
 
   archiveCurrentConversation: () => {
     const { currentConversation } = get();

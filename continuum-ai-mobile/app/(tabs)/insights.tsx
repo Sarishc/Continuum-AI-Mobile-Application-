@@ -31,6 +31,7 @@ import { format, isToday, isYesterday, subDays, startOfDay } from 'date-fns';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useInsights } from '../../hooks/useInsights';
+import { useHealthStore } from '../../store/healthStore';
 import { SeverityBadge } from '../../components/ui/SeverityBadge';
 import { SpecialistDetailSheet } from '../../components/ui/SpecialistDetailSheet';
 import { UploadModal } from '../../components/ui/UploadModal';
@@ -680,9 +681,10 @@ interface InsightCardItemProps {
   dismiss: (id: string) => void;
 }
 
-function InsightCardItem({ insight, index, markRead, dismiss }: InsightCardItemProps) {
+const InsightCardItem = React.memo(function InsightCardItem({ insight, index, markRead, dismiss }: InsightCardItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [specialistOpen, setSpecialistOpen] = useState(false);
+  const setPendingChatContext = useHealthStore((s) => s.setPendingChatContext);
   const severityColor = SEVERITY_COLOR[insight.severity];
   const isPulse = insight.severity === 'critical' || insight.severity === 'high';
 
@@ -858,7 +860,11 @@ function InsightCardItem({ insight, index, markRead, dismiss }: InsightCardItemP
             <View style={cardStyles.actionBtns}>
               <TouchableOpacity
                 style={cardStyles.askAiBtn}
-                onPress={() => router.push('/(tabs)/chat' as any)}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setPendingChatContext(`I want to ask about this insight: "${insight.summary}"`);
+                  router.push('/(tabs)/chat' as any);
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={cardStyles.askAiBtnText}>Ask AI</Text>
@@ -889,7 +895,7 @@ function InsightCardItem({ insight, index, markRead, dismiss }: InsightCardItemP
       />
     </Animated.View>
   );
-}
+});
 
 const cardStyles = StyleSheet.create({
   outer: {
@@ -1254,7 +1260,7 @@ export default function InsightsScreen() {
   }, []);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <View style={[styles.root, { paddingTop: insets.top + 16 }]}>
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -1264,7 +1270,7 @@ export default function InsightsScreen() {
               {unreadCount} unread
             </Text>
           ) : (
-            <Text style={[styles.headerSub, { color: Colors.accent }]}>All caught up</Text>
+            <Text style={[styles.headerSub, { color: Colors.positive }]}>All caught up</Text>
           )}
         </View>
         {unreadCount > 0 && (
@@ -1285,12 +1291,14 @@ export default function InsightsScreen() {
           { paddingBottom: insets.bottom + 110 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
             onRefresh={refetchAll}
-            tintColor={Colors.primary}
-            colors={[Colors.primary]}
+            tintColor={Colors.electric}
+            colors={[Colors.electric]}
+            progressBackgroundColor={Colors.surface}
           />
         }
       >
