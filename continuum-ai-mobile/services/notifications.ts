@@ -100,9 +100,15 @@ export function useNotificationTap() {
       const data = response.notification.request.content.data as
         | Record<string, string>
         | undefined;
+      const type = data?.type;
       const screen = data?.screen;
+
+      // Named types get priority routing
+      if (type === 'weekly_brief') {
+        setTimeout(() => router.push('/weekly-brief' as any), 300);
+        return;
+      }
       if (screen) {
-        // Small delay so navigation is ready after cold start
         setTimeout(() => {
           router.push(screen as Parameters<typeof router.push>[0]);
         }, 300);
@@ -110,4 +116,54 @@ export function useNotificationTap() {
     });
     return () => sub.remove();
   }, [router]);
+}
+
+// ─── Weekly brief scheduling ──────────────────────────────────────────────────
+
+export async function scheduleWeeklyBrief(): Promise<void> {
+  try {
+    // Cancel any existing weekly brief notifications
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const existing = scheduled.filter(
+      (n) => (n.content.data as Record<string, unknown>)?.type === 'weekly_brief'
+    );
+    for (const notif of existing) {
+      await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+    }
+
+    // Schedule for every Sunday at 9:00 AM local time
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '📊 Your Weekly Health Brief is Ready',
+        body: 'See how your health trended this week and what to focus on.',
+        sound: true,
+        data: {
+          type: 'weekly_brief',
+          screen: '/weekly-brief',
+        },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+        weekday: 1, // Sunday
+        hour: 9,
+        minute: 0,
+      },
+    });
+  } catch {
+    // Fail silently — simulator doesn't support calendar triggers
+  }
+}
+
+export async function cancelWeeklyBrief(): Promise<void> {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const existing = scheduled.filter(
+      (n) => (n.content.data as Record<string, unknown>)?.type === 'weekly_brief'
+    );
+    for (const notif of existing) {
+      await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+    }
+  } catch {
+    // Fail silently
+  }
 }

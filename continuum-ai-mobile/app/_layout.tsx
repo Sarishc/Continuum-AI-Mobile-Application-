@@ -25,7 +25,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../store/authStore';
 import { useSubscriptionStore } from '../store/subscriptionStore';
 import { initializePurchases, getCustomerInfo } from '../services/purchases';
-import { registerAndSyncPushToken, useNotificationTap } from '../services/notifications';
+import { registerAndSyncPushToken, useNotificationTap, scheduleWeeklyBrief } from '../services/notifications';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Toast } from '../components/ui/Toast';
 import { Colors } from '../constants/colors';
@@ -172,7 +172,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded) {
-      registerAndSyncPushToken().catch(() => {});
+      registerAndSyncPushToken()
+        .then(() => scheduleWeeklyBrief())
+        .catch(() => {});
     }
   }, [fontsLoaded]);
 
@@ -201,6 +203,14 @@ export default function RootLayout() {
                 <Stack.Screen name="index" />
                 <Stack.Screen
                   name="paywall"
+                  options={{
+                    presentation: 'modal',
+                    headerShown: false,
+                    animation: 'slide_from_bottom',
+                  }}
+                />
+                <Stack.Screen
+                  name="weekly-brief"
                   options={{
                     presentation: 'modal',
                     headerShown: false,

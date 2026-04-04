@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,14 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { format } from 'date-fns';
+import { format, isThisWeek } from 'date-fns';
 
 import { useAuthStore } from '../../store/authStore';
 import { useHealth, calculateStreak } from '../../hooks/useHealth';
@@ -342,9 +343,23 @@ export default function DashboardScreen() {
   } = useInsights();
 
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
+  const [showBriefCard, setShowBriefCard] = useState(false);
 
   const isLoading = healthLoading || insightsLoading;
   const isRefreshing = healthRefetching || insightsRefetching;
+
+  // Show weekly brief card on Sundays or if not viewed this week
+  useEffect(() => {
+    const check = async () => {
+      const isSunday = new Date().getDay() === 0;
+      const lastBriefDate = await AsyncStorage.getItem('last_brief_viewed');
+      const viewedThisWeek = lastBriefDate
+        ? isThisWeek(new Date(lastBriefDate), { weekStartsOn: 0 })
+        : false;
+      setShowBriefCard(isSunday || !viewedThisWeek);
+    };
+    check().catch(() => setShowBriefCard(false));
+  }, []);
 
   const onRefresh = useCallback(() => {
     refetchHealth();
@@ -482,6 +497,38 @@ export default function DashboardScreen() {
               />
             </Animated.View>
 
+            {/* ── Weekly Brief card ─────────────────────────────────────── */}
+            {showBriefCard && (
+              <Animated.View entering={FadeInDown.delay(240).duration(400)}>
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  style={styles.briefCard}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push('/weekly-brief' as any);
+                    AsyncStorage.setItem('last_brief_viewed', new Date().toISOString());
+                    setShowBriefCard(false);
+                  }}
+                >
+                  <LinearGradient
+                    colors={['#1a1d27', '#0f1117']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.briefCardGradient}
+                  >
+                    <View style={styles.briefCardLeft}>
+                      <Text style={styles.briefCardLabel}>WEEKLY BRIEF</Text>
+                      <Text style={styles.briefCardTitle}>
+                        {'Your health summary\nfor this week'}
+                      </Text>
+                      <Text style={styles.briefCardCta}>Tap to view →</Text>
+                    </View>
+                    <Text style={styles.briefCardEmoji}>📊</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+
             {/* ── Top Insights ──────────────────────────────────────────── */}
             {topInsights.length > 0 && (
               <Animated.View entering={FadeInDown.delay(260).duration(400)} style={styles.section}>
@@ -559,6 +606,44 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: Colors.void,
+  },
+  // Weekly brief card
+  briefCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(79,126,255,0.4)',
+  },
+  briefCardGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+  },
+  briefCardLeft: { gap: 4, flex: 1 },
+  briefCardLabel: {
+    fontSize: 10,
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.electric,
+    letterSpacing: 2,
+  },
+  briefCardTitle: {
+    fontSize: 16,
+    fontFamily: FontFamily.displaySemiBold,
+    color: Colors.textPrimary,
+    lineHeight: 22,
+    marginTop: 2,
+  },
+  briefCardCta: {
+    fontSize: 12,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    marginTop: 4,
+  },
+  briefCardEmoji: {
+    fontSize: 32,
+    marginLeft: Spacing[4],
   },
   scrollContent: {
     paddingHorizontal: Spacing[4],

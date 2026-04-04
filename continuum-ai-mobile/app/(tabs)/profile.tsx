@@ -25,6 +25,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useHealth } from '../../hooks/useHealth';
 import { useHealthStore } from '../../store/healthStore';
 import { useSubscriptionStore } from '../../store/subscriptionStore';
+import { scheduleWeeklyBrief, cancelWeeklyBrief } from '../../services/notifications';
+import { showToast } from '../../store/toastStore';
 import { Avatar } from '../../components/ui/Avatar';
 import { SectionHeader } from '../../components/ui/SectionHeader';
 import { SettingsRow } from '../../components/ui/SettingsRow';
@@ -473,6 +475,18 @@ export default function ProfileScreen() {
     setter(!value);
   }, []);
 
+  const handleWeeklyToggle = useCallback(async (value: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setNotifWeeklySummary(value);
+    if (value) {
+      await scheduleWeeklyBrief();
+      showToast('Weekly briefs scheduled for Sunday mornings', 'success');
+    } else {
+      await cancelWeeklyBrief();
+      showToast('Weekly briefs cancelled', 'info');
+    }
+  }, []);
+
   const profile = healthProfile;
   const conditions = profile?.conditions ?? [];
   const medications = profile?.medications ?? [];
@@ -680,7 +694,7 @@ export default function ProfileScreen() {
               rightElement={
                 <Switch
                   value={notifWeeklySummary}
-                  onValueChange={() => handleToggle(setNotifWeeklySummary, notifWeeklySummary)}
+                  onValueChange={(v) => handleWeeklyToggle(v)}
                   trackColor={{ false: Colors.border, true: Colors.primary }}
                   thumbColor="#FFFFFF"
                 />
