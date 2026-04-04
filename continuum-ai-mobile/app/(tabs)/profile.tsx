@@ -770,6 +770,12 @@ export default function ProfileScreen() {
               onPress={handleExport}
             />
             <SettingsRow
+              icon="📊"
+              label="Health Report Card"
+              sublabel="Generate and share your progress"
+              onPress={() => router.push('/report-card')}
+            />
+            <SettingsRow
               icon="🔒"
               label="Privacy & Security"
               sublabel="Data storage and usage"

@@ -24,6 +24,7 @@
         "NSMicrophoneUsageDescription": "Continuum may use your microphone for voice input features.",
         "NSHealthShareUsageDescription": "Continuum reads health data to provide personalized insights.",
         "NSHealthUpdateUsageDescription": "Continuum saves health data to help track your progress.",
+        "NSPhotoLibraryAddUsageDescription": "Continuum saves your Health Report Card to your photo library.",
         "UIBackgroundModes": ["fetch", "remote-notification"]
       }
     },
@@ -73,7 +74,15 @@
           "cameraPermission": "Allow Continuum to access your camera to capture health documents."
         }
       ],
-      "expo-document-picker"
+      "expo-document-picker",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Continuum to save your Health Report Card to your photo library.",
+          "savePhotosPermission": "Allow Continuum to save images to your photo library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
