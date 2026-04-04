@@ -28,6 +28,8 @@ import Animated, {
 import * as DocumentPicker from 'expo-document-picker';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -35,6 +37,7 @@ import { BorderRadius, Spacing } from '../../constants/theme';
 import { healthApi } from '../../api/health';
 import { showToast } from '../../store/toastStore';
 import { useHealthStore } from '../../store/healthStore';
+import { useSubscriptionStore } from '../../store/subscriptionStore';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MODAL_HEIGHT = SCREEN_HEIGHT * 0.62;
@@ -273,6 +276,8 @@ export interface UploadModalProps {
 export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalProps) {
   const queryClient = useQueryClient();
   const { addEntry } = useHealthStore();
+  const { canUploadEntry, incrementEntries, entriesThisMonth } = useSubscriptionStore();
+  const router = useRouter();
 
   const [mode, setMode] = useState<UploadMode>('menu');
   const [noteText, setNoteText] = useState('');
@@ -317,6 +322,7 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
   }, [visible, handleClose]);
 
   const handleSuccess = () => {
+    incrementEntries();
     queryClient.invalidateQueries({ queryKey: ['health', 'timeline'] });
     queryClient.invalidateQueries({ queryKey: ['insights'] });
     setMode('success');
@@ -482,30 +488,66 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
                   What would you like to add?
                 </Text>
 
-                <View style={styles.optionsList}>
-                  <OptionRow
-                    icon={<DocumentIcon />}
-                    iconBg="rgba(56, 139, 253, 0.15)"
-                    title="Upload Document"
-                    subtitle="PDF, image, or lab report"
-                    onPress={handlePickDocument}
-                    disabled={isSubmitting}
-                  />
-                  <OptionRow
-                    icon={<SymptomIcon />}
-                    iconBg="rgba(210, 153, 34, 0.15)"
-                    title="Describe Symptoms"
-                    subtitle="Tell us how you're feeling"
-                    onPress={handleDescribeSymptom}
-                  />
-                  <OptionRow
-                    icon={<NoteIcon />}
-                    iconBg="rgba(63, 185, 80, 0.15)"
-                    title="Add a Note"
-                    subtitle="Record observations or medications"
-                    onPress={() => setMode('note')}
-                  />
-                </View>
+                {canUploadEntry() ? (
+                  <View style={styles.optionsList}>
+                    <OptionRow
+                      icon={<DocumentIcon />}
+                      iconBg="rgba(56, 139, 253, 0.15)"
+                      title="Upload Document"
+                      subtitle="PDF, image, or lab report"
+                      onPress={handlePickDocument}
+                      disabled={isSubmitting}
+                    />
+                    <OptionRow
+                      icon={<SymptomIcon />}
+                      iconBg="rgba(210, 153, 34, 0.15)"
+                      title="Describe Symptoms"
+                      subtitle="Tell us how you're feeling"
+                      onPress={handleDescribeSymptom}
+                    />
+                    <OptionRow
+                      icon={<NoteIcon />}
+                      iconBg="rgba(63, 185, 80, 0.15)"
+                      title="Add a Note"
+                      subtitle="Record observations or medications"
+                      onPress={() => setMode('note')}
+                    />
+                  </View>
+                ) : (
+                  /* Entry limit gate */
+                  <View style={styles.limitGate}>
+                    <Text style={styles.limitEmoji}>📋</Text>
+                    <Text style={styles.limitTitle}>Monthly Limit Reached</Text>
+                    <Text style={styles.limitSub}>
+                      You've used 3 / 3 free entries this month
+                    </Text>
+
+                    {/* Progress bar */}
+                    <View style={styles.progressTrack}>
+                      <View style={styles.progressFill} />
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        onClose();
+                        setTimeout(() => router.push('/paywall' as any), 300);
+                      }}
+                      activeOpacity={0.88}
+                      style={styles.limitCtaTouchable}
+                    >
+                      <LinearGradient
+                        colors={Colors.gradientElectric}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.limitCta}
+                      >
+                        <Text style={styles.limitCtaText}>
+                          Upgrade for Unlimited Uploads
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </ScrollView>
             )}
 
@@ -560,6 +602,55 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
 }
 
 const styles = StyleSheet.create({
+  // Entry limit gate
+  limitGate: {
+    alignItems: 'center',
+    gap: Spacing[3],
+    paddingVertical: Spacing[6],
+    paddingHorizontal: Spacing[4],
+  },
+  limitEmoji: { fontSize: 36 },
+  limitTitle: {
+    fontSize: FontSize.lg,
+    fontFamily: FontFamily.displayBold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  limitSub: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  progressTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: Colors.border,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    width: '100%',
+    height: 6,
+    backgroundColor: Colors.critical,
+    borderRadius: 3,
+  },
+  limitCtaTouchable: {
+    width: '100%',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: Spacing[2],
+  },
+  limitCta: {
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  limitCtaText: {
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.displayBold,
+    color: '#FFFFFF',
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',

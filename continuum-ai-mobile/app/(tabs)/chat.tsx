@@ -43,8 +43,10 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { format } from 'date-fns';
+import { useRouter } from 'expo-router';
 
 import { useHealthStore } from '../../store/healthStore';
+import { useSubscriptionStore } from '../../store/subscriptionStore';
 import { healthAskApi, mockAIResponse, mockRuleResponse } from '../../api/chat';
 import { ConversationHistorySheet } from '../../components/ui/ConversationHistorySheet';
 import { SpecialistDetailSheet } from '../../components/ui/SpecialistDetailSheet';
@@ -180,8 +182,16 @@ function EngineCard({ active, label, subtitle, color, onPress }: {
 }
 
 function EngineToggle({ mode, onChange }: EngineToggleProps) {
+  const router = useRouter();
+  const isPro = useSubscriptionStore((s) => s.isPro);
+
   const handlePress = (next: EngineMode) => {
     if (next === mode) return;
+    if (next === 'ai' && !isPro) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      router.push('/paywall' as any);
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onChange(next);
   };
@@ -197,7 +207,7 @@ function EngineToggle({ mode, onChange }: EngineToggleProps) {
       />
       <EngineCard
         active={mode === 'ai'}
-        label="AI Mode"
+        label={isPro ? 'AI Mode' : '🔒 AI Mode'}
         subtitle="Generative"
         color={Colors.electric}
         onPress={() => handlePress('ai')}
@@ -481,11 +491,23 @@ const MessageBubble = React.memo(function MessageBubble({ message, onSpecialistP
     onReasoningToggle(message.id);
   };
 
+  const router = useRouter();
+
   return (
     <Animated.View entering={FadeInLeft.duration(280)} style={msgStyles.aiRow}>
       <View style={msgStyles.aiBubble}>
         {/* Main answer */}
         <Text style={msgStyles.aiText}>{content}</Text>
+
+        {/* Pro limit upgrade link */}
+        {message.metadata?.isProLimit && (
+          <TouchableOpacity
+            onPress={() => router.push('/paywall' as any)}
+            style={msgStyles.upgradeLinkRow}
+          >
+            <Text style={msgStyles.upgradeLink}>Upgrade to Pro →</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Confidence */}
         {confidence && <ConfidenceBar level={confidence} />}
@@ -536,6 +558,13 @@ const msgStyles = StyleSheet.create({
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textMuted,
     fontStyle: 'italic',
+  },
+  // Pro limit upgrade
+  upgradeLinkRow: { marginTop: Spacing[2] },
+  upgradeLink: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodySemiBold,
+    color: Colors.electric,
   },
   // User
   userRow: { alignItems: 'flex-end', paddingHorizontal: Spacing[4], marginBottom: Spacing[3] },
@@ -921,6 +950,9 @@ export default function ChatScreen() {
     setPendingChatContext,
   } = useHealthStore();
 
+  const { canUseAI, incrementAIMessages } = useSubscriptionStore();
+  const router = useRouter();
+
   const [inputText, setInputText] = useState('');
   const [pendingAttachment, setPendingAttachment] = useState<{
     name: string; type: string; uri: string;
@@ -1015,6 +1047,20 @@ export default function ChatScreen() {
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text) return;
+
+    // Free tier: 1 AI message per day
+    if (!canUseAI()) {
+      const limitMsg: ChatMessage = {
+        id: `sys-${Date.now()}`,
+        role: 'assistant',
+        content: "You've used your free AI message today. Upgrade to Pro for unlimited chat.",
+        timestamp: new Date().toISOString(),
+        metadata: { isProLimit: true },
+      };
+      addMessage(limitMsg);
+      return;
+    }
+    incrementAIMessages();
 
     // Build user message
     const userMsg: ChatMessage = {

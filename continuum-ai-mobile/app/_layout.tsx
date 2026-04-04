@@ -19,8 +19,12 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { format } from 'date-fns';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../store/authStore';
+import { useSubscriptionStore } from '../store/subscriptionStore';
+import { initializePurchases, getCustomerInfo } from '../services/purchases';
 import { registerAndSyncPushToken, useNotificationTap } from '../services/notifications';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Toast } from '../components/ui/Toast';
@@ -114,7 +118,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 // ─── Root layout ──────────────────────────────────────────────────────────────
 
 export default function RootLayout() {
-  const { hydrate } = useAuthStore();
+  const { hydrate, user } = useAuthStore();
+  const { setCustomerInfo, setLoading, resetDailyLimits } = useSubscriptionStore();
 
   const [fontsLoaded] = useFonts({
     Syne_400Regular,
@@ -133,6 +138,36 @@ export default function RootLayout() {
 
   useEffect(() => {
     hydrate();
+  }, []);
+
+  // RevenueCat init — runs once user is known
+  useEffect(() => {
+    if (!user?.id) return;
+    initializePurchases(user.id)
+      .then(async () => {
+        const info = await getCustomerInfo();
+        setCustomerInfo(info);
+      })
+      .catch(() => setLoading(false));
+  }, [user?.id]);
+
+  // Usage reset — daily AI limit + monthly entry limit
+  useEffect(() => {
+    const checkResets = async () => {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const thisMonth = format(new Date(), 'yyyy-MM');
+      const lastDay = await AsyncStorage.getItem('last_usage_day');
+      const lastMonth = await AsyncStorage.getItem('last_usage_month');
+      if (lastDay !== today) {
+        resetDailyLimits();
+        await AsyncStorage.setItem('last_usage_day', today);
+      }
+      if (lastMonth !== thisMonth) {
+        useSubscriptionStore.setState({ entriesThisMonth: 0 });
+        await AsyncStorage.setItem('last_usage_month', thisMonth);
+      }
+    };
+    checkResets().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -164,6 +199,14 @@ export default function RootLayout() {
                 <Stack.Screen name="+not-found" />
                 <Stack.Screen name="privacy" />
                 <Stack.Screen name="index" />
+                <Stack.Screen
+                  name="paywall"
+                  options={{
+                    presentation: 'modal',
+                    headerShown: false,
+                    animation: 'slide_from_bottom',
+                  }}
+                />
               </Stack>
             </AuthGuard>
             {/* Global toast — renders above everything */}

@@ -54,6 +54,12 @@
       "expo-secure-store",
       "expo-font",
       [
+        "react-native-purchases",
+        {
+          "androidApiKey": "YOUR_ANDROID_KEY"
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",

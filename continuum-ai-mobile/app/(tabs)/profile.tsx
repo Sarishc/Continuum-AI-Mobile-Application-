@@ -24,6 +24,7 @@ import { router } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useHealth } from '../../hooks/useHealth';
 import { useHealthStore } from '../../store/healthStore';
+import { useSubscriptionStore } from '../../store/subscriptionStore';
 import { Avatar } from '../../components/ui/Avatar';
 import { SectionHeader } from '../../components/ui/SectionHeader';
 import { SettingsRow } from '../../components/ui/SettingsRow';
@@ -102,6 +103,7 @@ interface ProfileHeaderCardProps {
   medicationCount: number;
   allergyCount: number;
   memberSince: string;
+  isPro: boolean;
   onEditPress: () => void;
 }
 
@@ -112,6 +114,7 @@ function ProfileHeaderCard({
   medicationCount,
   allergyCount,
   memberSince,
+  isPro,
   onEditPress,
 }: ProfileHeaderCardProps) {
   return (
@@ -133,7 +136,14 @@ function ProfileHeaderCard({
           </LinearGradient>
         </View>
         <View style={headerCardStyles.identityText}>
-          <Text style={headerCardStyles.name}>{name || '—'}</Text>
+          <View style={headerCardStyles.nameRow}>
+            <Text style={headerCardStyles.name}>{name || '—'}</Text>
+            {isPro && (
+              <View style={headerCardStyles.proBadge}>
+                <Text style={headerCardStyles.proBadgeText}>PRO</Text>
+              </View>
+            )}
+          </View>
           <Text style={headerCardStyles.email}>{email || '—'}</Text>
         </View>
       </View>
@@ -174,6 +184,19 @@ const headerCardStyles = StyleSheet.create({
     padding: Spacing[5],
     gap: Spacing[4],
     overflow: 'hidden',
+  },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
+  proBadge: {
+    backgroundColor: Colors.electric,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  proBadgeText: {
+    fontSize: 9,
+    fontFamily: FontFamily.displayBold,
+    color: '#FFFFFF',
+    letterSpacing: 1,
   },
   glowWrap: { position: 'absolute', top: -40, right: -40, width: 160, height: 160 },
   glow: {
@@ -432,6 +455,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { healthProfile, timeline, engineMode, setEngineMode } = useHealthStore();
+  const { isPro } = useSubscriptionStore();
   const { refetchAll } = useHealth();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -552,8 +576,31 @@ export default function ProfileScreen() {
           medicationCount={medications.length}
           allergyCount={allergies.length}
           memberSince={memberSince}
+          isPro={isPro}
           onEditPress={() => setEditOpen(true)}
         />
+
+        {/* ── Upgrade prompt (free users only) ─────────────────── */}
+        {!isPro && (
+          <Animated.View entering={FadeInUp.delay(60).duration(320)}>
+            <TouchableOpacity
+              onPress={() => router.push('/paywall' as any)}
+              activeOpacity={0.88}
+              style={profileStyles.upgradeCard}
+            >
+              <View style={profileStyles.upgradeLeft}>
+                <Text style={profileStyles.upgradeIcon}>⚡</Text>
+                <View>
+                  <Text style={profileStyles.upgradeTitle}>Upgrade to Pro</Text>
+                  <Text style={profileStyles.upgradeSub}>
+                    Unlock unlimited entries and AI mode
+                  </Text>
+                </View>
+              </View>
+              <Text style={profileStyles.upgradeArrow}>See Plans →</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
 
         {/* ── Completion banner ─────────────────────────────────── */}
         {showCompletionBanner && (
@@ -677,6 +724,21 @@ export default function ProfileScreen() {
           <SectionHeader title="Preferences" />
           <View style={profileStyles.card}>
             <SettingsRow
+              icon="⚡"
+              label="Subscription"
+              sublabel={isPro ? 'Continuum Pro' : 'Free Plan'}
+              onPress={() => router.push('/paywall' as any)}
+              rightElement={
+                isPro ? (
+                  <View style={profileStyles.activeProBadge}>
+                    <Text style={profileStyles.activeProText}>Active ✓</Text>
+                  </View>
+                ) : (
+                  <Text style={profileStyles.upgradeLink}>Upgrade →</Text>
+                )
+              }
+            />
+            <SettingsRow
               icon="🧠"
               label="Default Engine"
               sublabel="Used for new conversations"
@@ -751,6 +813,53 @@ const profileStyles = StyleSheet.create({
     fontSize: FontSize['2xl'],
     fontFamily: FontFamily.displayBold,
     color: Colors.textPrimary,
+  },
+  // Upgrade card (free users)
+  upgradeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.electricMist,
+    borderWidth: 1,
+    borderColor: Colors.electric,
+    borderRadius: 12,
+    paddingHorizontal: Spacing[4],
+    paddingVertical: 14,
+  },
+  upgradeLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
+  upgradeIcon: { fontSize: 20 },
+  upgradeTitle: {
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.displaySemiBold,
+    color: Colors.electric,
+  },
+  upgradeSub: {
+    fontSize: FontSize.xs,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  upgradeArrow: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodySemiBold,
+    color: Colors.electric,
+  },
+  // Subscription row badges
+  activeProBadge: {
+    backgroundColor: Colors.positiveGlow,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  activeProText: {
+    fontSize: FontSize.xs,
+    fontFamily: FontFamily.bodySemiBold,
+    color: Colors.positive,
+  },
+  upgradeLink: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodySemiBold,
+    color: Colors.electric,
   },
   section: { gap: Spacing[3] },
   card: {

@@ -32,6 +32,8 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useInsights } from '../../hooks/useInsights';
 import { useHealthStore } from '../../store/healthStore';
+import { useSubscriptionStore } from '../../store/subscriptionStore';
+import { ProGate } from '../../components/ui/ProGate';
 import { SeverityBadge } from '../../components/ui/SeverityBadge';
 import { SpecialistDetailSheet } from '../../components/ui/SpecialistDetailSheet';
 import { UploadModal } from '../../components/ui/UploadModal';
@@ -784,6 +786,7 @@ const InsightCardItem = React.memo(function InsightCardItem({ insight, index, ma
 
         {/* ── Expanded body ──────────────────────────────── */}
         {expanded ? (
+          <ProGate feature="expand_insight" style={cardStyles.expandedBody}>
           <View style={cardStyles.expandedBody}>
             <View style={cardStyles.divider} />
 
@@ -885,6 +888,7 @@ const InsightCardItem = React.memo(function InsightCardItem({ insight, index, ma
               )}
             </View>
           </View>
+          </ProGate>
         ) : null}
       </View>
 
