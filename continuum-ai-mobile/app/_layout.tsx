@@ -231,6 +231,20 @@ export default function RootLayout() {
                   }}
                 />
                 <Stack.Screen
+                  name="referral"
+                  options={{
+                    headerShown: false,
+                    animation: 'slide_from_right',
+                  }}
+                />
+                <Stack.Screen
+                  name="analytics"
+                  options={{
+                    headerShown: false,
+                    animation: 'slide_from_right',
+                  }}
+                />
+                <Stack.Screen
                   name="analytics"
                   options={{
                     headerShown: false,

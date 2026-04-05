@@ -20,7 +20,12 @@ export type AnalyticsEvent =
   | 'pro_purchase_completed'
   | 'demo_entered'
   | 'demo_converted'
-  | 'referral_shared';
+  // Referral events
+  | 'referral_page_viewed'
+  | 'referral_code_copied'
+  | 'referral_shared'
+  | 'referral_applied'
+  | 'referral_rewarded';
 
 // ─── Track ────────────────────────────────────────────────────────────────────
 

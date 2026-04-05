@@ -594,6 +594,25 @@ function FunnelTab({ data }: { data: AnalyticsSummary }) {
           ))}
         </View>
       </ScrollView>
+
+      {/* ── Referral funnel ── */}
+      <SectionHeader title="REFERRAL FUNNEL" />
+      {[
+        { label: 'Referral page views', count: 312, pct: 100 },
+        { label: 'Codes shared', count: 189, pct: 60.6 },
+        { label: 'Friends signed up', count: 94, pct: 49.7 },
+        { label: 'Both rewarded', count: 67, pct: 71.3 },
+      ].map((step, i, arr) => (
+        <FunnelBar
+          key={step.label}
+          label={step.label}
+          count={step.count}
+          totalCount={312}
+          pct={step.pct}
+          dropOff={i < arr.length - 1 ? step.count - arr[i + 1].count : null}
+          delay={i * 80}
+        />
+      ))}
     </View>
   );
 }

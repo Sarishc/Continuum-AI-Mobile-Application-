@@ -18,6 +18,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.continuumhealth.app",
       "buildNumber": "1",
+      "associatedDomains": ["applinks:continuum-health.app"],
       "infoPlist": {
         "NSCameraUsageDescription": "Continuum uses your camera to capture health documents and lab reports.",
         "NSPhotoLibraryUsageDescription": "Continuum accesses your photos to upload health documents and reports.",
@@ -37,6 +38,20 @@
       "versionCode": 1,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "continuum-health.app",
+              "pathPrefix": "/invite"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",

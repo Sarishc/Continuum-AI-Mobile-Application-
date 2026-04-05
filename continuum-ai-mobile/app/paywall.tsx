@@ -271,6 +271,21 @@ export default function PaywallScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Referral alternative */}
+          <View style={s.referralDivider}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>or</Text>
+            <View style={s.dividerLine} />
+          </View>
+          <Text style={s.referralAlt}>Invite a friend instead</Text>
+          <TouchableOpacity
+            onPress={() => router.push('/referral')}
+            activeOpacity={0.8}
+            style={s.referralBtn}
+          >
+            <Text style={s.referralBtnText}>Get 7 Days Pro Free →</Text>
+          </TouchableOpacity>
+
           {/* Disclaimer */}
           <Text style={s.disclaimer}>
             Subscription auto-renews. Cancel anytime in App Store settings.
@@ -437,7 +452,7 @@ const s = StyleSheet.create({
   },
 
   // CTA
-  ctaWrap: { gap: Spacing[3], alignItems: 'center' },
+  ctaWrap: { gap: Spacing[3], alignItems: 'center', width: '100%' },
   ctaTouchable: { width: '100%', borderRadius: 16, overflow: 'hidden' },
   ctaGradient: {
     height: 58,
@@ -470,5 +485,39 @@ const s = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 15,
     paddingHorizontal: Spacing[4],
+  },
+
+  // Referral alternative
+  referralDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
+    width: '100%',
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.rim },
+  dividerText: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+  },
+  referralAlt: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  referralBtn: {
+    borderWidth: 1,
+    borderColor: Colors.electric,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  referralBtnText: {
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.displaySemiBold,
+    color: Colors.electric,
   },
 });

@@ -106,6 +106,8 @@ interface ProfileHeaderCardProps {
   allergyCount: number;
   memberSince: string;
   isPro: boolean;
+  isProTrial?: boolean;
+  proTrialDaysLeft?: number;
   onEditPress: () => void;
 }
 
@@ -117,6 +119,8 @@ function ProfileHeaderCard({
   allergyCount,
   memberSince,
   isPro,
+  isProTrial = false,
+  proTrialDaysLeft = 0,
   onEditPress,
 }: ProfileHeaderCardProps) {
   return (
@@ -143,6 +147,13 @@ function ProfileHeaderCard({
             {isPro && (
               <View style={headerCardStyles.proBadge}>
                 <Text style={headerCardStyles.proBadgeText}>PRO</Text>
+              </View>
+            )}
+            {!isPro && isProTrial && (
+              <View style={[headerCardStyles.proBadge, { backgroundColor: Colors.cautionGlow, borderColor: Colors.caution }]}>
+                <Text style={[headerCardStyles.proBadgeText, { color: Colors.caution }]}>
+                  PRO TRIAL · {proTrialDaysLeft}d
+                </Text>
               </View>
             )}
           </View>
@@ -457,7 +468,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { healthProfile, timeline, engineMode, setEngineMode } = useHealthStore();
-  const { isPro } = useSubscriptionStore();
+  const { isPro, isProTrial, proTrialDaysLeft, effectivelyPro } = useSubscriptionStore();
   const { refetchAll } = useHealth();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -608,11 +619,13 @@ export default function ProfileScreen() {
           allergyCount={allergies.length}
           memberSince={memberSince}
           isPro={isPro}
+          isProTrial={isProTrial}
+          proTrialDaysLeft={proTrialDaysLeft()}
           onEditPress={() => setEditOpen(true)}
         />
 
         {/* ── Upgrade prompt (free users only) ─────────────────── */}
-        {!isPro && (
+        {!effectivelyPro() && (
           <Animated.View entering={FadeInUp.delay(60).duration(320)}>
             <TouchableOpacity
               onPress={() => router.push('/paywall' as any)}
@@ -821,6 +834,12 @@ export default function ProfileScreen() {
         <Animated.View entering={FadeInUp.delay(340).duration(320)} style={profileStyles.section}>
           <SectionHeader title="Account" />
           <View style={profileStyles.card}>
+            <SettingsRow
+              icon="🎁"
+              label="Invite Friends"
+              sublabel="Give 7 days Pro · Get 7 days Pro"
+              onPress={() => router.push('/referral')}
+            />
             <SettingsRow
               icon="👤"
               label="Account Settings"
