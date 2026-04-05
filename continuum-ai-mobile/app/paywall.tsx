@@ -122,13 +122,13 @@ export default function PaywallScreen() {
     getOfferings().then((offering) => {
       if (!offering) return;
       const monthly = offering.availablePackages.find(
-        (p) => p.packageType === 'MONTHLY'
+        (p: PurchasesPackage) => p.packageType === 'MONTHLY'
       ) ?? null;
       const annual = offering.availablePackages.find(
-        (p) => p.packageType === 'ANNUAL'
+        (p: PurchasesPackage) => p.packageType === 'ANNUAL'
       ) ?? null;
       setPackages({ monthly, annual });
-    });
+    }).catch(() => {});
   }, []);
 
   const handlePurchase = async () => {

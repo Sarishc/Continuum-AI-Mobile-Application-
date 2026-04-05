@@ -566,7 +566,7 @@ export default function DashboardScreen() {
                       insight={insight}
                       healthCategory={insight.healthCategory}
                       confidence={Math.round((insight.confidence ?? 0.8) * 100)}
-                      timeAgo={formatTimeAgo(insight.createdAt)}
+                      timeAgo={formatTimeAgo(insight.generatedAt)}
                       onPress={() => router.push('/(tabs)/insights')}
                     />
                   </Animated.View>

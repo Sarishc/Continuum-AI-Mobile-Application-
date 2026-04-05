@@ -1260,6 +1260,9 @@ export default function ChatScreen() {
             showsVerticalScrollIndicator={false}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
+            removeClippedSubviews
+            maxToRenderPerBatch={10}
+            windowSize={10}
             ListHeaderComponent={
               isAITyping ? <TypingIndicator /> : null
             }

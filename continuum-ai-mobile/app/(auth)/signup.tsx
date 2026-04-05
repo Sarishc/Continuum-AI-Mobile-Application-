@@ -217,13 +217,12 @@ export default function SignupScreen() {
       setLocalError('Password must be at least 8 characters.');
       return;
     }
-    const success = await signup({ name: name.trim(), email: email.trim(), password });
-    // Apply referral code after account creation
-    if (success && referralStatus === 'valid' && referralCode.trim()) {
+    const signupSucceeded = await signup({ name: name.trim(), email: email.trim(), password });
+    if (signupSucceeded && referralStatus === 'valid' && referralCode.trim()) {
       await applyReferralCode(referralCode.trim());
       track('referral_applied');
       showToast('Welcome! You have 7 days of Pro free 🎉', 'success');
-    } else if (success) {
+    } else if (signupSucceeded) {
       track('signup_completed');
     }
   };
