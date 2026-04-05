@@ -32,6 +32,7 @@ import {
   generateShareText,
   WeeklyBriefData,
 } from '../services/weeklyBrief';
+import { track } from '../services/analytics';
 import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, BorderRadius } from '../constants/theme';
@@ -220,6 +221,7 @@ export default function WeeklyBriefScreen() {
 
   useEffect(() => {
     loadBrief();
+    track('weekly_brief_viewed');
   }, []);
 
   const handleShare = () => {

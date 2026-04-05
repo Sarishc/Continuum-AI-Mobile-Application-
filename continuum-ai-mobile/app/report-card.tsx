@@ -24,6 +24,7 @@ import * as Haptics from 'expo-haptics';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import ViewShot from 'react-native-view-shot';
+import { track } from '../services/analytics';
 import Svg, { Path } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { format } from 'date-fns';
@@ -162,6 +163,7 @@ export default function ReportCardScreen() {
           dialogTitle: 'Share your Health Report Card',
           UTI: 'public.png',
         });
+        track('report_card_shared');
       } else {
         showToast('Sharing not available on this device.', 'error');
       }
@@ -189,6 +191,7 @@ export default function ReportCardScreen() {
         return;
       }
       await MediaLibrary.saveToLibraryAsync(uri);
+      track('report_card_saved');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast('Saved to your photo library! 📸', 'success');
     } finally {

@@ -18,6 +18,7 @@ import { AnimatedBackground } from '../components/ui/AnimatedBackground';
 import { useSubscriptionStore } from '../store/subscriptionStore';
 import { getOfferings, purchasePackage, restorePurchases } from '../services/purchases';
 import { showToast } from '../store/toastStore';
+import { track } from '../services/analytics';
 import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, BorderRadius } from '../constants/theme';
@@ -117,6 +118,7 @@ export default function PaywallScreen() {
   const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
+    track('pro_paywall_viewed');
     getOfferings().then((offering) => {
       if (!offering) return;
       const monthly = offering.availablePackages.find(
@@ -139,8 +141,10 @@ export default function PaywallScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setPurchasing(true);
     try {
+      track('pro_purchase_started', { plan: selectedPlan });
       const info = await purchasePackage(pkg);
       setCustomerInfo(info);
+      track('pro_purchase_completed', { plan: selectedPlan });
       showToast('Welcome to Pro! 🎉', 'success');
       router.back();
     } catch (e: any) {

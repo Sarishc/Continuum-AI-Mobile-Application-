@@ -463,6 +463,23 @@ export default function ProfileScreen() {
   const [editOpen, setEditOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [devModeUnlocked, setDevModeUnlocked] = useState(false);
+  const [aboutTapCount, setAboutTapCount] = useState(0);
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleAboutTap = () => {
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+    const newCount = aboutTapCount + 1;
+    setAboutTapCount(newCount);
+    if (newCount >= 7) {
+      setDevModeUnlocked(true);
+      setAboutTapCount(0);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showToast('Developer mode unlocked 🔓', 'success');
+    } else {
+      tapTimeoutRef.current = setTimeout(() => setAboutTapCount(0), 2000);
+    }
+  };
 
   // Notification toggles (local state)
   const [notifHealthAlerts, setNotifHealthAlerts] = useState(true);
@@ -785,9 +802,18 @@ export default function ProfileScreen() {
               icon="ℹ️"
               label="About Continuum"
               sublabel="Version 1.0.0"
-              onPress={() => setAboutOpen(true)}
-              showDivider={false}
+              onPress={handleAboutTap}
+              showDivider={!devModeUnlocked}
             />
+            {devModeUnlocked && (
+              <SettingsRow
+                icon="📊"
+                label="Analytics Dashboard"
+                sublabel="Internal metrics · dev only"
+                onPress={() => router.push('/analytics')}
+                showDivider={false}
+              />
+            )}
           </View>
         </Animated.View>
 

@@ -44,6 +44,7 @@ import * as Haptics from 'expo-haptics';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
+import { track } from '../../services/analytics';
 
 import { useHealthStore } from '../../store/healthStore';
 import { useSubscriptionStore } from '../../store/subscriptionStore';
@@ -1073,6 +1074,7 @@ export default function ChatScreen() {
     addMessage(userMsg);
     setInputText('');
     setPendingAttachment(null);
+    track('ai_message_sent', { mode: engineMode });
 
     // Show typing
     setTyping(true);
