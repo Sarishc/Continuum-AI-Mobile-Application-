@@ -26,17 +26,19 @@ export function useAuth() {
     }
   };
 
-  const handleSignup = async (payload: SignupPayload) => {
+  const handleSignup = async (payload: SignupPayload): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
     try {
       const { data } = await authApi.signup(payload);
       await login(data.tokens.accessToken, data.user);
       router.replace('/(tabs)');
+      return true;
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Sign up failed. Please try again.';
       setError(message);
+      return false;
     } finally {
       setIsLoading(false);
     }

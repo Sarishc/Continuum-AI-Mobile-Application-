@@ -55,14 +55,12 @@ export const Gradients = {
 
 // ─── Flat Colors export (backward-compat + convenience) ───────────────────────
 export const Colors = {
-  // Backgrounds
-  background: Blacks.void,
-  surface: Blacks.surface,
-  surfaceElevated: Blacks.elevated,
-  overlay: Blacks.overlay,
-
-  // Blacks (direct access)
+  // Blacks (direct access) — spread first so named aliases take precedence
   ...Blacks,
+
+  // Backgrounds (aliases)
+  background: Blacks.void,
+  surfaceElevated: Blacks.elevated,
 
   // Borders
   border: Blacks.rim,

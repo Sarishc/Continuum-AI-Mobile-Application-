@@ -82,8 +82,8 @@ const ENTRY_TYPE_CONFIG: Record<HealthEntryType, EntryTypeConfig> = {
     label: 'Medication',
   },
   vital: {
-    color: '#FF9F47',
-    bg: 'rgba(255,159,71,0.12)',
+    color: Colors.caution,
+    bg: Colors.cautionGlow,
     label: 'Vital',
   },
   note: {

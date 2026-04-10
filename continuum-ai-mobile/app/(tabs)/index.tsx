@@ -107,6 +107,18 @@ function TimelineNavIcon() {
   );
 }
 
+function ReportCardIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path d="M14 2H6C5.5 2 5 2.2 4.6 2.6C4.2 3 4 3.5 4 4V20C4 20.5 4.2 21 4.6 21.4C5 21.8 5.5 22 6 22H18C18.5 22 19 21.8 19.4 21.4C19.8 21 20 20.5 20 20V8L14 2Z"
+        stroke={Colors.electric} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M14 2V8H20" stroke={Colors.electric} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M8 13H16" stroke={Colors.electric} strokeWidth={1.5} strokeLinecap="round" />
+      <Path d="M8 17H13" stroke={Colors.electric} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 // ─── Metric card (horizontal scroll) ─────────────────────────────────────────
 
 interface MetricCardProps {
@@ -479,22 +491,31 @@ export default function DashboardScreen() {
             </Animated.View>
 
             {/* ── Quick Actions ─────────────────────────────────────────── */}
-            <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.quickRow}>
-              <QuickTile
-                icon={<UploadIcon />}
-                label="Upload"
-                onPress={() => setUploadModalVisible(true)}
-              />
-              <QuickTile
-                icon={<AskAIIcon />}
-                label="Ask AI"
-                onPress={() => router.push('/(tabs)/chat')}
-              />
-              <QuickTile
-                icon={<TimelineNavIcon />}
-                label="Timeline"
-                onPress={() => router.push('/(tabs)/timeline')}
-              />
+            <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.quickGrid}>
+              <View style={styles.quickRow}>
+                <QuickTile
+                  icon={<UploadIcon />}
+                  label="Upload"
+                  onPress={() => setUploadModalVisible(true)}
+                />
+                <QuickTile
+                  icon={<AskAIIcon />}
+                  label="Ask AI"
+                  onPress={() => router.push('/(tabs)/chat')}
+                />
+              </View>
+              <View style={styles.quickRow}>
+                <QuickTile
+                  icon={<TimelineNavIcon />}
+                  label="Timeline"
+                  onPress={() => router.push('/(tabs)/timeline')}
+                />
+                <QuickTile
+                  icon={<ReportCardIcon />}
+                  label="Report Card"
+                  onPress={() => router.push('/report-card')}
+                />
+              </View>
             </Animated.View>
 
             {/* ── Weekly Brief card ─────────────────────────────────────── */}
@@ -545,7 +566,7 @@ export default function DashboardScreen() {
                       insight={insight}
                       healthCategory={insight.healthCategory}
                       confidence={Math.round((insight.confidence ?? 0.8) * 100)}
-                      timeAgo={formatTimeAgo(insight.createdAt)}
+                      timeAgo={formatTimeAgo(insight.generatedAt)}
                       onPress={() => router.push('/(tabs)/insights')}
                     />
                   </Animated.View>
@@ -730,6 +751,9 @@ const styles = StyleSheet.create({
   },
 
   // Quick actions
+  quickGrid: {
+    gap: Spacing[3],
+  },
   quickRow: {
     flexDirection: 'row',
     gap: Spacing[3],

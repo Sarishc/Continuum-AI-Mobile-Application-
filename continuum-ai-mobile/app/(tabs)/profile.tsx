@@ -106,6 +106,8 @@ interface ProfileHeaderCardProps {
   allergyCount: number;
   memberSince: string;
   isPro: boolean;
+  isProTrial?: boolean;
+  proTrialDaysLeft?: number;
   onEditPress: () => void;
 }
 
@@ -117,6 +119,8 @@ function ProfileHeaderCard({
   allergyCount,
   memberSince,
   isPro,
+  isProTrial = false,
+  proTrialDaysLeft = 0,
   onEditPress,
 }: ProfileHeaderCardProps) {
   return (
@@ -143,6 +147,13 @@ function ProfileHeaderCard({
             {isPro && (
               <View style={headerCardStyles.proBadge}>
                 <Text style={headerCardStyles.proBadgeText}>PRO</Text>
+              </View>
+            )}
+            {!isPro && isProTrial && (
+              <View style={[headerCardStyles.proBadge, { backgroundColor: Colors.cautionGlow, borderColor: Colors.caution }]}>
+                <Text style={[headerCardStyles.proBadgeText, { color: Colors.caution }]}>
+                  PRO TRIAL · {proTrialDaysLeft}d
+                </Text>
               </View>
             )}
           </View>
@@ -457,12 +468,29 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { healthProfile, timeline, engineMode, setEngineMode } = useHealthStore();
-  const { isPro } = useSubscriptionStore();
+  const { isPro, isProTrial, proTrialDaysLeft, effectivelyPro } = useSubscriptionStore();
   const { refetchAll } = useHealth();
 
   const [editOpen, setEditOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [devModeUnlocked, setDevModeUnlocked] = useState(false);
+  const [aboutTapCount, setAboutTapCount] = useState(0);
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleAboutTap = () => {
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+    const newCount = aboutTapCount + 1;
+    setAboutTapCount(newCount);
+    if (newCount >= 7) {
+      setDevModeUnlocked(true);
+      setAboutTapCount(0);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showToast('Developer mode unlocked 🔓', 'success');
+    } else {
+      tapTimeoutRef.current = setTimeout(() => setAboutTapCount(0), 2000);
+    }
+  };
 
   // Notification toggles (local state)
   const [notifHealthAlerts, setNotifHealthAlerts] = useState(true);
@@ -591,11 +619,13 @@ export default function ProfileScreen() {
           allergyCount={allergies.length}
           memberSince={memberSince}
           isPro={isPro}
+          isProTrial={isProTrial}
+          proTrialDaysLeft={proTrialDaysLeft()}
           onEditPress={() => setEditOpen(true)}
         />
 
         {/* ── Upgrade prompt (free users only) ─────────────────── */}
-        {!isPro && (
+        {!effectivelyPro() && (
           <Animated.View entering={FadeInUp.delay(60).duration(320)}>
             <TouchableOpacity
               onPress={() => router.push('/paywall' as any)}
@@ -770,6 +800,12 @@ export default function ProfileScreen() {
               onPress={handleExport}
             />
             <SettingsRow
+              icon="📊"
+              label="Health Report Card"
+              sublabel="Generate and share your progress"
+              onPress={() => router.push('/report-card')}
+            />
+            <SettingsRow
               icon="🔒"
               label="Privacy & Security"
               sublabel="Data storage and usage"
@@ -779,9 +815,18 @@ export default function ProfileScreen() {
               icon="ℹ️"
               label="About Continuum"
               sublabel="Version 1.0.0"
-              onPress={() => setAboutOpen(true)}
-              showDivider={false}
+              onPress={handleAboutTap}
+              showDivider={!devModeUnlocked}
             />
+            {devModeUnlocked && (
+              <SettingsRow
+                icon="📊"
+                label="Analytics Dashboard"
+                sublabel="Internal metrics · dev only"
+                onPress={() => router.push('/analytics')}
+                showDivider={false}
+              />
+            )}
           </View>
         </Animated.View>
 
@@ -789,6 +834,12 @@ export default function ProfileScreen() {
         <Animated.View entering={FadeInUp.delay(340).duration(320)} style={profileStyles.section}>
           <SectionHeader title="Account" />
           <View style={profileStyles.card}>
+            <SettingsRow
+              icon="🎁"
+              label="Invite Friends"
+              sublabel="Give 7 days Pro · Get 7 days Pro"
+              onPress={() => router.push('/referral')}
+            />
             <SettingsRow
               icon="👤"
               label="Account Settings"

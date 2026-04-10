@@ -29,6 +29,7 @@ import * as Haptics from 'expo-haptics';
 import Svg, { Path, Circle, Rect, Polyline } from 'react-native-svg';
 import { format, isToday, isYesterday, subDays, startOfDay } from 'date-fns';
 import { router } from 'expo-router';
+import { track } from '../../services/analytics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useInsights } from '../../hooks/useInsights';
 import { useHealthStore } from '../../store/healthStore';
@@ -714,8 +715,10 @@ const InsightCardItem = React.memo(function InsightCardItem({ insight, index, ma
 
   const toggleExpand = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpanded((v) => !v);
-  }, []);
+    const next = !expanded;
+    setExpanded(next);
+    if (next) track('insight_expanded', { severity: insight.severity });
+  }, [expanded, insight.severity]);
 
   const dateLabel = (() => {
     const d = new Date(insight.generatedAt);

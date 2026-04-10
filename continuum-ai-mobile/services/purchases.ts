@@ -1,7 +1,6 @@
 import Purchases, {
   PurchasesPackage,
   CustomerInfo,
-  LOG_LEVEL,
 } from 'react-native-purchases';
 import { Platform } from 'react-native';
 
@@ -9,14 +8,10 @@ const REVENUECAT_IOS_KEY = process.env.EXPO_PUBLIC_RC_IOS_KEY ?? '';
 const REVENUECAT_ANDROID_KEY = process.env.EXPO_PUBLIC_RC_ANDROID_KEY ?? '';
 
 export async function initializePurchases(userId: string): Promise<void> {
-  if (__DEV__) {
-    Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-  }
-
   const apiKey =
     Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
 
-  await Purchases.configure({ apiKey, appUserID: userId });
+  Purchases.configure({ apiKey, appUserID: userId });
 }
 
 export async function getOfferings() {

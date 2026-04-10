@@ -17,6 +17,7 @@ import Animated, {
   withSequence,
   withTiming,
   withDelay,
+  SharedValue,
 } from 'react-native-reanimated';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -45,7 +46,7 @@ function LoadingDots() {
   const dot3 = useSharedValue(1);
 
   React.useEffect(() => {
-    const pulse = (sv: Animated.SharedValue<number>, delay: number) => {
+    const pulse = (sv: SharedValue<number>, delay: number) => {
       sv.value = withDelay(
         delay,
         withRepeat(

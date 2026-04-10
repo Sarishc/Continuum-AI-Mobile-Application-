@@ -32,6 +32,7 @@ import {
   generateShareText,
   WeeklyBriefData,
 } from '../services/weeklyBrief';
+import { track } from '../services/analytics';
 import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, BorderRadius } from '../constants/theme';
@@ -220,6 +221,7 @@ export default function WeeklyBriefScreen() {
 
   useEffect(() => {
     loadBrief();
+    track('weekly_brief_viewed');
   }, []);
 
   const handleShare = () => {
@@ -420,6 +422,27 @@ export default function WeeklyBriefScreen() {
                   <Text style={s.stepText}>{step}</Text>
                 </View>
               ))}
+            </Animated.View>
+
+            {/* ── Generate Report Card ── */}
+            <Animated.View entering={FadeInUp.delay(340).duration(380)} style={s.reportCardWrap}>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push('/report-card');
+                }}
+                activeOpacity={0.8}
+                style={s.reportCardBtn}
+              >
+                <LinearGradient
+                  colors={Colors.gradientElectric}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={s.reportCardGradient}
+                >
+                  <Text style={s.reportCardText}>📊  GENERATE REPORT CARD</Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </Animated.View>
 
             {/* ── Regenerate ── */}
@@ -715,6 +738,21 @@ const s = StyleSheet.create({
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textSecondary,
     lineHeight: 22,
+  },
+
+  // Report Card CTA
+  reportCardWrap: { paddingTop: Spacing[4] },
+  reportCardBtn: { borderRadius: BorderRadius.md, overflow: 'hidden' },
+  reportCardGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportCardText: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.displayBold,
+    color: '#FFFFFF',
+    letterSpacing: 1,
   },
 
   // Regenerate

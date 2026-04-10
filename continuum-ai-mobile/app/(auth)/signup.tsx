@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,9 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
+import { validateCode, applyReferralCode } from '../../services/referral';
+import { showToast } from '../../store/toastStore';
+import { track } from '../../services/analytics';
 import { AnimatedBackground } from '../../components/ui/AnimatedBackground';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -185,9 +188,23 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // Referral code state
+  const [showReferral, setShowReferral] = useState(false);
+  const [referralCode, setReferralCode] = useState('');
+  const [referralStatus, setReferralStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+  const [referrerName, setReferrerName] = useState<string | null>(null);
+
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
   const confirmRef = useRef<TextInput>(null);
+
+  const handleCheckCode = useCallback(async () => {
+    if (!referralCode.trim()) return;
+    setReferralStatus('checking');
+    const result = await validateCode(referralCode.trim());
+    setReferralStatus(result.valid ? 'valid' : 'invalid');
+    setReferrerName(result.referrerName);
+  }, [referralCode]);
 
   const handleSignup = async () => {
     setLocalError(null);
@@ -200,7 +217,14 @@ export default function SignupScreen() {
       setLocalError('Password must be at least 8 characters.');
       return;
     }
-    await signup({ name: name.trim(), email: email.trim(), password });
+    const signupSucceeded = await signup({ name: name.trim(), email: email.trim(), password });
+    if (signupSucceeded && referralStatus === 'valid' && referralCode.trim()) {
+      await applyReferralCode(referralCode.trim());
+      track('referral_applied');
+      showToast('Welcome! You have 7 days of Pro free 🎉', 'success');
+    } else if (signupSucceeded) {
+      track('signup_completed');
+    }
   };
 
   const displayError = localError ?? error;
@@ -290,6 +314,68 @@ export default function SignupScreen() {
               returnKeyType="done"
               onSubmitEditing={handleSignup}
             />
+
+            {/* ── Referral code ── */}
+            <TouchableOpacity
+              onPress={() => setShowReferral((v) => !v)}
+              activeOpacity={0.7}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              <Text style={styles.referralToggle}>
+                {showReferral ? '▾ Have a referral code?' : '▸ Have a referral code?'}
+              </Text>
+            </TouchableOpacity>
+
+            {showReferral && (
+              <View style={styles.referralWrap}>
+                <View style={[
+                  styles.referralInputRow,
+                  referralStatus === 'valid' && { borderColor: Colors.positive },
+                  referralStatus === 'invalid' && { borderColor: Colors.critical },
+                ]}>
+                  <TextInput
+                    style={styles.referralInput}
+                    placeholder="Enter code (e.g. JORDAN-X7K2)"
+                    placeholderTextColor={Colors.textMuted}
+                    value={referralCode}
+                    onChangeText={(t) => {
+                      setReferralCode(t.toUpperCase());
+                      if (referralStatus !== 'idle') setReferralStatus('idle');
+                    }}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    onBlur={handleCheckCode}
+                    returnKeyType="done"
+                    onSubmitEditing={handleCheckCode}
+                  />
+                  {referralStatus === 'idle' && referralCode.length > 0 && (
+                    <TouchableOpacity onPress={handleCheckCode} hitSlop={8}>
+                      <Text style={styles.checkBtn}>CHECK</Text>
+                    </TouchableOpacity>
+                  )}
+                  {referralStatus === 'valid' && (
+                    <View style={styles.statusCircle}>
+                      <Text style={{ color: Colors.positive, fontSize: 14 }}>✓</Text>
+                    </View>
+                  )}
+                  {referralStatus === 'invalid' && (
+                    <View style={[styles.statusCircle, { backgroundColor: Colors.criticalGlow }]}>
+                      <Text style={{ color: Colors.critical, fontSize: 14 }}>✗</Text>
+                    </View>
+                  )}
+                </View>
+                {referralStatus === 'valid' && (
+                  <Text style={styles.referralValid}>
+                    Code accepted! You&apos;ll get 7 days Pro free 🎉
+                  </Text>
+                )}
+                {referralStatus === 'invalid' && (
+                  <Text style={styles.referralInvalid}>
+                    Code not found. Check and try again.
+                  </Text>
+                )}
+              </View>
+            )}
 
             <TouchableOpacity
               onPress={handleSignup}
@@ -424,5 +510,55 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontFamily: FontFamily.displaySemiBold,
     color: Colors.electric,
+  },
+
+  // Referral code
+  referralToggle: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    marginTop: 4,
+  },
+  referralWrap: { gap: 8 },
+  referralInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.rim,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: Colors.surface,
+    gap: 8,
+  },
+  referralInput: {
+    flex: 1,
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.displayMedium,
+    color: Colors.textPrimary,
+    letterSpacing: 1,
+  },
+  checkBtn: {
+    fontSize: FontSize.xs,
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.electric,
+  },
+  statusCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.positiveGlow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  referralValid: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.positive,
+  },
+  referralInvalid: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.critical,
   },
 });

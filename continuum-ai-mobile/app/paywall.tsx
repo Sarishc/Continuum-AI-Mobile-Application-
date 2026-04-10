@@ -18,6 +18,7 @@ import { AnimatedBackground } from '../components/ui/AnimatedBackground';
 import { useSubscriptionStore } from '../store/subscriptionStore';
 import { getOfferings, purchasePackage, restorePurchases } from '../services/purchases';
 import { showToast } from '../store/toastStore';
+import { track } from '../services/analytics';
 import { Colors } from '../constants/colors';
 import { FontFamily, FontSize } from '../constants/typography';
 import { Spacing, BorderRadius } from '../constants/theme';
@@ -117,16 +118,17 @@ export default function PaywallScreen() {
   const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
+    track('pro_paywall_viewed');
     getOfferings().then((offering) => {
       if (!offering) return;
       const monthly = offering.availablePackages.find(
-        (p) => p.packageType === 'MONTHLY'
+        (p: PurchasesPackage) => p.packageType === 'MONTHLY'
       ) ?? null;
       const annual = offering.availablePackages.find(
-        (p) => p.packageType === 'ANNUAL'
+        (p: PurchasesPackage) => p.packageType === 'ANNUAL'
       ) ?? null;
       setPackages({ monthly, annual });
-    });
+    }).catch(() => {});
   }, []);
 
   const handlePurchase = async () => {
@@ -139,8 +141,10 @@ export default function PaywallScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setPurchasing(true);
     try {
+      track('pro_purchase_started', { plan: selectedPlan });
       const info = await purchasePackage(pkg);
       setCustomerInfo(info);
+      track('pro_purchase_completed', { plan: selectedPlan });
       showToast('Welcome to Pro! 🎉', 'success');
       router.back();
     } catch (e: any) {
@@ -265,6 +269,21 @@ export default function PaywallScreen() {
             <Text style={s.restoreLink}>
               {restoring ? 'Restoring…' : 'Restore Purchases'}
             </Text>
+          </TouchableOpacity>
+
+          {/* Referral alternative */}
+          <View style={s.referralDivider}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>or</Text>
+            <View style={s.dividerLine} />
+          </View>
+          <Text style={s.referralAlt}>Invite a friend instead</Text>
+          <TouchableOpacity
+            onPress={() => router.push('/referral')}
+            activeOpacity={0.8}
+            style={s.referralBtn}
+          >
+            <Text style={s.referralBtnText}>Get 7 Days Pro Free →</Text>
           </TouchableOpacity>
 
           {/* Disclaimer */}
@@ -433,7 +452,7 @@ const s = StyleSheet.create({
   },
 
   // CTA
-  ctaWrap: { gap: Spacing[3], alignItems: 'center' },
+  ctaWrap: { gap: Spacing[3], alignItems: 'center', width: '100%' },
   ctaTouchable: { width: '100%', borderRadius: 16, overflow: 'hidden' },
   ctaGradient: {
     height: 58,
@@ -466,5 +485,39 @@ const s = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 15,
     paddingHorizontal: Spacing[4],
+  },
+
+  // Referral alternative
+  referralDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
+    width: '100%',
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.rim },
+  dividerText: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+  },
+  referralAlt: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  referralBtn: {
+    borderWidth: 1,
+    borderColor: Colors.electric,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  referralBtnText: {
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.displaySemiBold,
+    color: Colors.electric,
   },
 });

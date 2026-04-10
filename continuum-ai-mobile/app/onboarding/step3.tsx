@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, KeyboardAvoidingView, Platform,
+  TouchableOpacity, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -10,9 +10,12 @@ import Animated, {
   withRepeat,
   withSequence,
   withDelay,
+  withSpring,
   cancelAnimation,
   Easing,
+  FadeIn,
 } from 'react-native-reanimated';
+import { track } from '../../services/analytics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { healthApi } from '../../api/health';
@@ -174,6 +177,8 @@ export default function Step3({ onComplete }: { onComplete: () => void }) {
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [medsText, setMedsText] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const celebScale = useSharedValue(0);
 
   const toggleCondition = useCallback((item: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -217,11 +222,36 @@ export default function Step3({ onComplete }: { onComplete: () => void }) {
     }
 
     await completeOnboarding();
+    track('onboarding_completed', { has_conditions: conditions.length > 0 });
     setSaving(false);
-    onComplete();
+
+    // Show celebration overlay, then navigate
+    setShowCelebration(true);
+    celebScale.value = withSequence(
+      withSpring(1.2, { damping: 8 }),
+      withSpring(1.0, { damping: 12 }),
+    );
+    setTimeout(() => {
+      setShowCelebration(false);
+      onComplete();
+    }, 1500);
   };
 
+  const celebAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: celebScale.value }],
+  }));
+
   return (
+    <>
+    {/* ── Celebration overlay ── */}
+    <Modal visible={showCelebration} transparent animationType="fade" statusBarTranslucent>
+      <Animated.View entering={FadeIn.duration(200)} style={styles.celebOverlay}>
+        <Animated.Text style={[styles.celebEmoji, celebAnimStyle]}>🎉</Animated.Text>
+        <Text style={styles.celebTitle}>Welcome to Continuum!</Text>
+        <Text style={styles.celebSub}>You have 1 free AI message today</Text>
+      </Animated.View>
+    </Modal>
+
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -313,6 +343,7 @@ export default function Step3({ onComplete }: { onComplete: () => void }) {
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
+    </>
   );
 }
 
@@ -394,5 +425,27 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.displayBold,
     color: '#FFFFFF',
     letterSpacing: 1,
+  },
+
+  // Celebration overlay
+  celebOverlay: {
+    flex: 1,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  celebEmoji: { fontSize: 72 },
+  celebTitle: {
+    fontSize: 32,
+    fontFamily: FontFamily.displayExtraBold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  celebSub: {
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+    textAlign: 'center',
   },
 });

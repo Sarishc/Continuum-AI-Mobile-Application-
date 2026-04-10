@@ -31,6 +31,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { track } from '../../services/analytics';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { BorderRadius, Spacing } from '../../constants/theme';
@@ -323,6 +324,7 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
 
   const handleSuccess = () => {
     incrementEntries();
+    track('entry_uploaded', { mode });
     queryClient.invalidateQueries({ queryKey: ['health', 'timeline'] });
     queryClient.invalidateQueries({ queryKey: ['insights'] });
     setMode('success');

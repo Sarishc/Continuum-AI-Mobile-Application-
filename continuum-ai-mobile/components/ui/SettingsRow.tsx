@@ -55,7 +55,6 @@ export function SettingsRow({
 
   const handlePress = () => {
     if (!onPress) return;
-    flashAnim.value = 1;
     RNAnimated.sequence([
       RNAnimated.timing(flashAnim, { toValue: 1, duration: 40, useNativeDriver: false }),
       RNAnimated.timing(flashAnim, { toValue: 0, duration: 160, useNativeDriver: false }),

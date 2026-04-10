@@ -26,6 +26,7 @@ import { useAuthStore } from '../store/authStore';
 import { useSubscriptionStore } from '../store/subscriptionStore';
 import { initializePurchases, getCustomerInfo } from '../services/purchases';
 import { registerAndSyncPushToken, useNotificationTap, scheduleWeeklyBrief } from '../services/notifications';
+import { track } from '../services/analytics';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Toast } from '../components/ui/Toast';
 import { Colors } from '../constants/colors';
@@ -147,6 +148,10 @@ export default function RootLayout() {
       .then(async () => {
         const info = await getCustomerInfo();
         setCustomerInfo(info);
+        // Track app open after we know subscription status
+        track('app_opened', {
+          is_pro: !!(info?.entitlements?.active?.['pro']),
+        });
       })
       .catch(() => setLoading(false));
   }, [user?.id]);
@@ -215,6 +220,35 @@ export default function RootLayout() {
                     presentation: 'modal',
                     headerShown: false,
                     animation: 'slide_from_bottom',
+                  }}
+                />
+                <Stack.Screen
+                  name="report-card"
+                  options={{
+                    presentation: 'modal',
+                    headerShown: false,
+                    animation: 'slide_from_bottom',
+                  }}
+                />
+                <Stack.Screen
+                  name="referral"
+                  options={{
+                    headerShown: false,
+                    animation: 'slide_from_right',
+                  }}
+                />
+                <Stack.Screen
+                  name="analytics"
+                  options={{
+                    headerShown: false,
+                    animation: 'slide_from_right',
+                  }}
+                />
+                <Stack.Screen
+                  name="analytics"
+                  options={{
+                    headerShown: false,
+                    animation: 'slide_from_right',
                   }}
                 />
               </Stack>

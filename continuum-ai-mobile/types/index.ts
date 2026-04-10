@@ -159,6 +159,8 @@ export interface ChatMessage {
   attachment?: ChatAttachment;
   // UI state (not persisted to API)
   reasoningExpanded?: boolean;
+  // Metadata for special messages (pro-limit, etc.)
+  metadata?: Record<string, string | number | boolean>;
 }
 
 export interface AIAskResponse {

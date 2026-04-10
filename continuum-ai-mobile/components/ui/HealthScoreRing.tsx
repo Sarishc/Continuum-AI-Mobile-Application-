@@ -16,6 +16,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 interface HealthScoreRingProps {
   score: number;
   size?: number;
+  animated?: boolean;
 }
 
 function getScoreColor(score: number): string {
@@ -25,7 +26,7 @@ function getScoreColor(score: number): string {
   return Colors.critical;
 }
 
-export function HealthScoreRing({ score, size = 140 }: HealthScoreRingProps) {
+export function HealthScoreRing({ score, size = 140, animated = true }: HealthScoreRingProps) {
   const strokeWidth = 10;
   const glowWidth = 22;
   const trackWidth = 3;
@@ -37,9 +38,13 @@ export function HealthScoreRing({ score, size = 140 }: HealthScoreRingProps) {
   const cx = size / 2;
   const cy = size / 2;
 
-  const progress = useSharedValue(0);
+  const progress = useSharedValue(animated ? 0 : score / 100);
 
   useEffect(() => {
+    if (!animated) {
+      progress.value = score / 100;
+      return;
+    }
     // Overshoot slightly then settle — gives a "snapping in" feel
     progress.value = withSequence(
       withSpring(Math.min(score + 6, 100) / 100, {
@@ -49,7 +54,7 @@ export function HealthScoreRing({ score, size = 140 }: HealthScoreRingProps) {
       }),
       withTiming(score / 100, { duration: 300 }),
     );
-  }, [score]);
+  }, [score, animated]);
 
   const animatedScoreProps = useAnimatedProps(() => ({
     strokeDashoffset: circumference * (1 - progress.value),
@@ -58,6 +63,7 @@ export function HealthScoreRing({ score, size = 140 }: HealthScoreRingProps) {
   // Rotating dashed outer ring (RN Animated for infinite rotation)
   const rotation = useRef(new RNAnimated.Value(0)).current;
   useEffect(() => {
+    if (!animated) return;
     RNAnimated.loop(
       RNAnimated.timing(rotation, {
         toValue: 1,
@@ -65,7 +71,7 @@ export function HealthScoreRing({ score, size = 140 }: HealthScoreRingProps) {
         useNativeDriver: true,
       })
     ).start();
-  }, []);
+  }, [animated]);
 
   const spin = rotation.interpolate({
     inputRange: [0, 1],
