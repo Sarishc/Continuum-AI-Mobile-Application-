@@ -1,58 +1,59 @@
-import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
-import { authApi } from '../api/auth';
-import type { LoginPayload, SignupPayload } from '../api/auth';
+import { resetPassword } from '../services/authService';
+import { track } from '../services/analytics';
 
+/**
+ * Drop-in hook used by login.tsx and signup.tsx.
+ * Delegates to Firebase via authStore — no more direct API calls.
+ */
 export function useAuth() {
   const router = useRouter();
-  const { login, logout, isAuthenticated, user, hydrate } = useAuthStore();
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    login,
+    signup,
+    logout,
+    isAuthenticated,
+    user,
+    isLoading,
+    error,
+    clearError,
+    completeOnboarding,
+  } = useAuthStore();
 
-  const handleLogin = async (payload: LoginPayload) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const { data } = await authApi.login(payload);
-      await login(data.tokens.accessToken, data.user);
+  // ── Login ─────────────────────────────────────────────────────────────────
+  const handleLogin = async (payload: { email: string; password: string }): Promise<boolean> => {
+    const success = await login(payload.email, payload.password);
+    if (success) {
+      track('login_completed');
       router.replace('/(tabs)');
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Login failed. Please try again.';
-      setError(message);
-    } finally {
-      setIsLoading(false);
     }
+    return success;
   };
 
-  const handleSignup = async (payload: SignupPayload): Promise<boolean> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const { data } = await authApi.signup(payload);
-      await login(data.tokens.accessToken, data.user);
-      router.replace('/(tabs)');
-      return true;
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Sign up failed. Please try again.';
-      setError(message);
-      return false;
-    } finally {
-      setIsLoading(false);
+  // ── Signup ────────────────────────────────────────────────────────────────
+  const handleSignup = async (payload: {
+    name: string;
+    email: string;
+    password: string;
+  }): Promise<boolean> => {
+    const success = await signup(payload.email, payload.password, payload.name);
+    if (success) {
+      track('signup_completed');
+      router.replace('/onboarding');
     }
+    return success;
   };
 
+  // ── Logout ────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
-    try {
-      await authApi.logout();
-    } catch {
-      // ignore network errors on logout
-    } finally {
-      await logout();
-      router.replace('/(auth)/login');
-    }
+    await logout();
+    router.replace('/(auth)/login');
+  };
+
+  // ── Password reset ────────────────────────────────────────────────────────
+  const handleResetPassword = async (email: string) => {
+    return resetPassword(email);
   };
 
   return {
@@ -63,7 +64,10 @@ export function useAuth() {
     login: handleLogin,
     signup: handleSignup,
     logout: handleLogout,
-    hydrate,
-    clearError: () => setError(null),
+    resetPassword: handleResetPassword,
+    clearError,
+    completeOnboarding,
+    // Legacy compat — was used in old layout hydration
+    hydrate: () => {},
   };
 }

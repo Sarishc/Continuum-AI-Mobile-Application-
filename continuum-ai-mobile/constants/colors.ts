@@ -1,72 +1,109 @@
-// ─── Continuum AI — "Clinical Luxury" Color System ───────────────────────────
+// ─── Continuum AI — "Living Health OS" Color System ─────────────────────────
+// Warm blacks (not cold blue-black), Apple semantic colors, glass surfaces.
 
-// Blacks: layered depth system
+// Base depth layers
 export const Blacks = {
-  obsidian: '#000000',   // true black — screen edges, overlays
-  void: '#050508',       // near-black — main background
-  abyss: '#0A0B0F',     // page background
-  depth: '#0F1117',     // section backgrounds
-  surface: '#14161E',   // card backgrounds
-  elevated: '#1A1D27',  // elevated cards
-  overlay: '#1F2231',   // modals, sheets
-  rim: '#252838',       // borders default
-  rimActive: '#353852', // borders focused / active
+  obsidian: '#000000',   // true black — outer frame
+  void: '#000000',       // true black
+  abyss: '#080808',      // page background
+  depth: '#0E0E0E',      // section backgrounds
+  surface: '#161616',    // card backgrounds
+  elevated: '#1E1E1E',   // elevated cards, overlays
+  overlay: '#262626',    // modals, sheets
+  rim: 'rgba(255,255,255,0.06)',     // subtle borders
+  rimActive: 'rgba(255,255,255,0.15)', // active borders
 } as const;
 
-// Electric Blue: primary brand accent
+// Glass surfaces
+export const Glass = {
+  glass: 'rgba(255,255,255,0.05)',      // 5% white — subtle glass
+  glassStrong: 'rgba(255,255,255,0.10)', // 10% white — stronger glass
+  glassHighlight: 'rgba(255,255,255,0.15)', // top-edge highlights
+  glassBorder: 'rgba(255,255,255,0.10)',   // glass card borders
+} as const;
+
+// Primary — warm electric blue (not cold)
 export const Electric = {
-  electric: '#4F7EFF',
-  electricBright: '#6B95FF',
-  electricDeep: '#3560E0',
-  electricGlow: 'rgba(79,126,255,0.15)',
-  electricMist: 'rgba(79,126,255,0.08)',
+  electric: '#4C8DFF',
+  electricBright: '#6FA4FF',
+  electricDeep: '#2563EB',
+  electricGlow: 'rgba(76,141,255,0.20)',
+  electricMist: 'rgba(76,141,255,0.10)',
 } as const;
 
-// Semantic: data / status only
+// Apple Health semantic colors — warm, human
 export const Semantic = {
-  positive: '#00C896',
-  positiveGlow: 'rgba(0,200,150,0.12)',
-  caution: '#FFB547',
-  cautionGlow: 'rgba(255,181,71,0.12)',
-  critical: '#FF4F6B',
-  criticalGlow: 'rgba(255,79,107,0.12)',
-  insight: '#A78BFA',
-  insightGlow: 'rgba(167,139,250,0.12)',
+  // Vital / good (Apple green)
+  vital: '#30D158',
+  vitalGlow: 'rgba(48,209,88,0.18)',
+  positive: '#30D158',
+  positiveGlow: 'rgba(48,209,88,0.18)',
+
+  // Alert / warning (Apple orange)
+  alert: '#FF9F0A',
+  alertGlow: 'rgba(255,159,10,0.18)',
+  caution: '#FF9F0A',
+  cautionGlow: 'rgba(255,159,10,0.18)',
+
+  // Critical (Apple red)
+  critical: '#FF453A',
+  criticalGlow: 'rgba(255,69,58,0.18)',
+
+  // Insight / AI / mindful (Apple purple)
+  insight: '#BF5AF2',
+  insightGlow: 'rgba(191,90,242,0.18)',
+  mindful: '#BF5AF2',
+  mindfulGlow: 'rgba(191,90,242,0.18)',
+
+  // Energy / streak (warm orange)
+  energy: '#FF6B00',
+  energyGlow: 'rgba(255,107,0,0.18)',
 } as const;
 
-// Text: 5-level hierarchy
-export const Text = {
-  textPrimary: '#F0F2FF',
-  textSecondary: '#9BA3C4',
-  textTertiary: '#5C6384',
-  textMuted: '#3A3F5C',
+// Achievement
+export const Achievement = {
+  gold: '#FFD60A',
+  goldGlow: 'rgba(255,214,10,0.20)',
+} as const;
+
+// Text hierarchy — warmer whites
+export const TextColors = {
+  textPrimary: '#FFFFFF',
+  textSecondary: 'rgba(255,255,255,0.60)',
+  textTertiary: 'rgba(255,255,255,0.30)',
+  textMuted: 'rgba(255,255,255,0.15)',
+  textQuaternary: 'rgba(255,255,255,0.08)',
   textInverse: '#000000',
 } as const;
 
-// Gradient arrays (use with expo-linear-gradient)
+// Gradient arrays
 export const Gradients = {
-  gradientElectric: ['#4F7EFF', '#3560E0'] as [string, string],
-  gradientPositive: ['#00C896', '#00A87A'] as [string, string],
-  gradientCritical: ['#FF4F6B', '#E03050'] as [string, string],
-  gradientGlass: ['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)'] as [string, string],
-  gradientDepth: ['#0A0B0F', '#050508'] as [string, string],
-  gradientCaution: ['#FFB547', '#E09A30'] as [string, string],
+  gradientElectric: ['#4C8DFF', '#2563EB'] as [string, string],
+  gradientPositive: ['#30D158', '#25A244'] as [string, string],
+  gradientCritical: ['#FF453A', '#D93025'] as [string, string],
+  gradientCaution: ['#FF9F0A', '#CC7D00'] as [string, string],
+  gradientInsight: ['#BF5AF2', '#9B30D6'] as [string, string],
+  gradientGlass: ['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.04)'] as [string, string],
+  gradientDepth: ['#080808', '#000000'] as [string, string],
+  gradientGold: ['#FFD60A', '#E6B800'] as [string, string],
 } as const;
 
-// ─── Flat Colors export (backward-compat + convenience) ───────────────────────
+// ─── Flat Colors export — backward-compatible key names ──────────────────────
 export const Colors = {
-  // Blacks (direct access) — spread first so named aliases take precedence
+  // ── Base layers ──────────────────────────────────────────────────────────
   ...Blacks,
-
-  // Backgrounds (aliases)
-  background: Blacks.void,
+  background: Blacks.abyss,        // '#080808'
+  base: Blacks.abyss,              // alias: base page bg
   surfaceElevated: Blacks.elevated,
 
-  // Borders
-  border: Blacks.rim,
-  borderActive: Electric.electric,
+  // ── Glass ─────────────────────────────────────────────────────────────────
+  ...Glass,
 
-  // Brand
+  // ── Borders ───────────────────────────────────────────────────────────────
+  border: Blacks.rim,
+  borderActive: Blacks.rimActive,
+
+  // ── Brand electric ────────────────────────────────────────────────────────
   ...Electric,
   primary: Electric.electric,
   primaryBright: Electric.electricBright,
@@ -74,32 +111,36 @@ export const Colors = {
   primaryGlow: Electric.electricGlow,
   primaryMist: Electric.electricMist,
 
-  // Semantic
-  positive: Semantic.positive,
-  positiveGlow: Semantic.positiveGlow,
-  caution: Semantic.caution,
-  cautionGlow: Semantic.cautionGlow,
-  critical: Semantic.critical,
-  criticalGlow: Semantic.criticalGlow,
-  insight: Semantic.insight,
-  insightGlow: Semantic.insightGlow,
-
-  // Legacy aliases (kept for backward compat)
+  // ── Semantic ──────────────────────────────────────────────────────────────
+  ...Semantic,
   warning: Semantic.caution,
-  accent: Semantic.positive,
+  accent: Semantic.vital,
   purple: Semantic.insight,
 
-  // Text
-  ...Text,
+  // ── Achievement ───────────────────────────────────────────────────────────
+  ...Achievement,
 
-  // Gradients
+  // ── Text ──────────────────────────────────────────────────────────────────
+  ...TextColors,
+
+  // ── Gradients ─────────────────────────────────────────────────────────────
   ...Gradients,
 
-  // Legacy gradient aliases
+  // Legacy gradient aliases (kept for backward compat)
   gradientBlue: Gradients.gradientElectric,
   gradientGreen: Gradients.gradientPositive,
-  gradientPurple: ['#A78BFA', '#7C5FD4'] as [string, string],
-  gradientCritical: Gradients.gradientCritical,
+  gradientPurple: ['#BF5AF2', '#9B30D6'] as [string, string],
+
+  // ── Misc legacy ───────────────────────────────────────────────────────────
+  obsidian: Blacks.obsidian,
 } as const;
 
 export type ColorKey = keyof typeof Colors;
+
+// ─── Semantic glass surface — primary card material ───────────────────────────
+// Use this StyleSheet spread for all glass cards: backgroundColor, borderWidth, borderColor
+export const GLASS_1 = {
+  backgroundColor: 'rgba(255,255,255,0.06)',
+  borderWidth: 0.5 as const,
+  borderColor: 'rgba(255,255,255,0.10)',
+} as const;

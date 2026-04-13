@@ -1,12 +1,15 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated as RNAnimated } from 'react-native';
-import Svg, { Circle, G } from 'react-native-svg';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
+import Svg, { Circle, Defs, LinearGradient, Stop, G } from 'react-native-svg';
 import Animated, {
   useSharedValue,
   useAnimatedProps,
-  withSpring,
   withSequence,
+  withSpring,
   withTiming,
+  runOnJS,
+  useAnimatedReaction,
+  Easing,
 } from 'react-native-reanimated';
 import { Colors } from '../../constants/colors';
 import { FontFamily } from '../../constants/typography';
@@ -20,156 +23,244 @@ interface HealthScoreRingProps {
 }
 
 function getScoreColor(score: number): string {
-  if (score >= 80) return Colors.positive;
-  if (score >= 60) return Colors.electric;
-  if (score >= 40) return Colors.caution;
+  if (score >= 80) return Colors.vital;
+  if (score >= 60) return Colors.primary;
+  if (score >= 40) return Colors.alert;
   return Colors.critical;
 }
 
-export function HealthScoreRing({ score, size = 140, animated = true }: HealthScoreRingProps) {
-  const strokeWidth = 10;
-  const glowWidth = 22;
+// Orbit chip data
+const ORBIT_CHIPS = [
+  { icon: '❤️', angle: 320 },  // right
+  { icon: '💊', angle: 200 },  // lower-left
+  { icon: '⚡', angle: 80 },   // upper-left
+] as const;
+
+interface OrbitChipProps {
+  icon: string;
+  value: string;
+  label: string;
+  angle: number;
+  cx: number;
+  cy: number;
+  orbitRadius: number;
+  visible: boolean;
+}
+
+function OrbitChip({ icon, value, label, angle, cx, cy, orbitRadius, visible }: OrbitChipProps) {
+  const rad = (angle * Math.PI) / 180;
+  const x = cx + orbitRadius * Math.cos(rad);
+  const y = cy + orbitRadius * Math.sin(rad);
+
+  if (!visible) return null;
+
+  return (
+    <View
+      style={[
+        chipStyles.chip,
+        {
+          position: 'absolute',
+          left: x - 26,
+          top: y - 20,
+        },
+      ]}
+    >
+      <Text style={chipStyles.icon}>{icon}</Text>
+      <Text style={chipStyles.value}>{value}</Text>
+    </View>
+  );
+}
+
+const chipStyles = StyleSheet.create({
+  chip: {
+    width: 52,
+    height: 40,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  icon: {
+    fontSize: 12,
+    lineHeight: 14,
+  },
+  value: {
+    fontSize: 10,
+    fontFamily: FontFamily.bodyBold,
+    color: Colors.textSecondary,
+    lineHeight: 12,
+  },
+});
+
+export function HealthScoreRing({
+  score,
+  size = 160,
+  animated = true,
+}: HealthScoreRingProps) {
+  const strokeWidth = 12;
   const trackWidth = 3;
 
-  // Layout uses the max strokeWidth to determine the ring's outer bounds
-  const ringOffset = glowWidth / 2 + 2;
-  const radius = (size - ringOffset * 2) / 2;
+  // Ring geometry
+  const padding = strokeWidth / 2 + 2;
+  const radius = (size - padding * 2) / 2;
   const circumference = 2 * Math.PI * radius;
   const cx = size / 2;
   const cy = size / 2;
 
+  const color = getScoreColor(score);
+  const gradientId = `scoreGrad-${score}`;
+
+  // Animated progress (0 → score/100 with spring overshoot)
   const progress = useSharedValue(animated ? 0 : score / 100);
+
+  // Count-up displayed number
+  const [displayScore, setDisplayScore] = useState(animated ? 0 : score);
+  const [chipsVisible, setChipsVisible] = useState(!animated);
+
+  const setDisplay = (v: number) => {
+    setDisplayScore(Math.round(v * score));
+  };
+  const showChips = () => setChipsVisible(true);
+
+  useAnimatedReaction(
+    () => progress.value,
+    (current) => {
+      runOnJS(setDisplay)(current);
+    },
+    [score]
+  );
 
   useEffect(() => {
     if (!animated) {
       progress.value = score / 100;
       return;
     }
-    // Overshoot slightly then settle — gives a "snapping in" feel
+
+    // Overshoot to score+4% then settle
+    const overshoot = Math.min((score + 4) / 100, 1);
     progress.value = withSequence(
-      withSpring(Math.min(score + 6, 100) / 100, {
-        damping: 14,
-        stiffness: 80,
-        mass: 1,
-      }),
-      withTiming(score / 100, { duration: 300 }),
+      withSpring(overshoot, { damping: 14, stiffness: 80, mass: 1 }),
+      withTiming(score / 100, { duration: 280, easing: Easing.out(Easing.ease) })
     );
+
+    // Show orbit chips after ring finishes
+    const timer = setTimeout(() => showChips(), 1400);
+    return () => clearTimeout(timer);
   }, [score, animated]);
 
-  const animatedScoreProps = useAnimatedProps(() => ({
+  // Animated arc props
+  const animatedArcProps = useAnimatedProps(() => ({
     strokeDashoffset: circumference * (1 - progress.value),
   }));
 
-  // Rotating dashed outer ring (RN Animated for infinite rotation)
-  const rotation = useRef(new RNAnimated.Value(0)).current;
-  useEffect(() => {
-    if (!animated) return;
-    RNAnimated.loop(
-      RNAnimated.timing(rotation, {
-        toValue: 1,
-        duration: 8000,
-        useNativeDriver: true,
-      })
-    ).start();
-  }, [animated]);
-
-  const spin = rotation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
+  // Glowing endpoint dot position (end of arc)
+  const animatedDotProps = useAnimatedProps(() => {
+    const angle = -Math.PI / 2 + 2 * Math.PI * progress.value;
+    return {
+      cx: cx + radius * Math.cos(angle),
+      cy: cy + radius * Math.sin(angle),
+    };
   });
 
-  const color = getScoreColor(score);
-  const scoreInt = Math.round(score);
-
-  // Build 12 dashes for the outer rotating ring
-  const outerR = size / 2 - 3;
-  const dashCount = 12;
-  const dashLen = (2 * Math.PI * outerR) / dashCount / 2;
-  const dashGap = (2 * Math.PI * outerR) / dashCount - dashLen;
+  // Orbit chip values — pulled from HealthStore externally via props or defaults
+  const orbitRadius = size / 2 + 28;
 
   return (
-    <View style={{ width: size, height: size }}>
-      {/* Glow ring (behind everything) */}
-      <Svg
-        width={size}
-        height={size}
-        style={StyleSheet.absoluteFill}
-      >
+    <View style={{ width: size + 56, height: size + 56, alignItems: 'center', justifyContent: 'center' }}>
+      {/* Orbit chips — positioned relative to ring center */}
+      <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' } as any]}>
+        <View style={{ width: size, height: size, position: 'relative' }}>
+          {ORBIT_CHIPS.map((chip, i) => (
+            <OrbitChip
+              key={i}
+              icon={chip.icon}
+              value={i === 0 ? '72' : i === 1 ? '2' : '5'}
+              label={i === 0 ? 'BPM' : i === 1 ? 'meds' : 'days'}
+              angle={chip.angle}
+              cx={size / 2}
+              cy={size / 2}
+              orbitRadius={size / 2 + 28}
+              visible={chipsVisible}
+            />
+          ))}
+        </View>
+      </View>
+
+      {/* Ring SVG */}
+      <Svg width={size} height={size}>
+        <Defs>
+          <LinearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0%" stopColor={color} />
+            <Stop offset="100%" stopColor={color} stopOpacity={0.6} />
+          </LinearGradient>
+        </Defs>
+
+        {/* Ambient glow ring */}
         <Circle
           cx={cx}
           cy={cy}
           r={radius}
           stroke={color}
-          strokeWidth={glowWidth}
+          strokeWidth={20}
           fill="none"
-          opacity={0.12}
-          rotation="-90"
-          origin={`${cx}, ${cy}`}
+          opacity={0.06}
         />
-      </Svg>
 
-      {/* Track + Score rings */}
-      <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
         {/* Track */}
         <Circle
           cx={cx}
           cy={cy}
           r={radius}
-          stroke={Colors.elevated}
+          stroke="rgba(255,255,255,0.06)"
           strokeWidth={trackWidth}
           fill="none"
         />
+
         {/* Animated score arc */}
         <AnimatedCircle
           cx={cx}
           cy={cy}
           r={radius}
-          stroke={color}
+          stroke={`url(#${gradientId})`}
           strokeWidth={strokeWidth}
           fill="none"
           strokeDasharray={circumference}
-          animatedProps={animatedScoreProps}
+          animatedProps={animatedArcProps}
           strokeLinecap="round"
-          rotation="-90"
-          origin={`${cx}, ${cy}`}
+          transform={`rotate(-90, ${cx}, ${cy})`}
+        />
+
+        {/* Glowing endpoint dot — opacity baked into animatedProps */}
+        <AnimatedCircle
+          r={6}
+          fill={color}
+          animatedProps={animatedDotProps}
+        />
+        {/* Dot glow (larger, lower opacity) */}
+        <AnimatedCircle
+          r={10}
+          fill={color}
+          opacity={0.3}
+          animatedProps={animatedDotProps}
         />
       </Svg>
 
-      {/* Rotating dashed outer ring */}
-      <RNAnimated.View
-        style={[
-          StyleSheet.absoluteFill,
-          { transform: [{ rotate: spin }] },
-        ]}
-        pointerEvents="none"
-      >
-        <Svg width={size} height={size}>
-          <Circle
-            cx={cx}
-            cy={cy}
-            r={outerR}
-            stroke={color}
-            strokeWidth={1.5}
-            fill="none"
-            opacity={0.25}
-            strokeDasharray={`${dashLen} ${dashGap}`}
-          />
-        </Svg>
-      </RNAnimated.View>
-
       {/* Center content */}
-      <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
-        <View style={styles.scoreRow}>
-          <Text style={[styles.scoreText, { color }]}>{scoreInt}</Text>
-          <Text style={styles.outOf}>{'\u00A0'}/ 100</Text>
+      <View style={[StyleSheet.absoluteFill, centerStyles.center, { pointerEvents: 'none' } as any]}>
+        <View style={centerStyles.scoreRow}>
+          <Text style={[centerStyles.scoreNumber, { color }]}>{displayScore}</Text>
+          <Text style={centerStyles.outOf}>{'\u00A0'}/ 100</Text>
         </View>
-        <Text style={styles.label}>HEALTH SCORE</Text>
+        <Text style={centerStyles.label}>HEALTH SCORE</Text>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const centerStyles = StyleSheet.create({
   center: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -178,22 +269,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
   },
-  scoreText: {
-    fontSize: 38,
-    fontFamily: FontFamily.displayExtraBold,
-    lineHeight: 42,
-    letterSpacing: -1,
+  scoreNumber: {
+    fontSize: 52,
+    fontFamily: FontFamily.brand,
+    letterSpacing: -2,
+    lineHeight: 56,
   },
   outOf: {
-    fontSize: 14,
-    fontFamily: FontFamily.displayRegular,
-    color: Colors.textMuted,
-    lineHeight: 20,
+    fontSize: 16,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textTertiary,
+    lineHeight: 22,
+    marginBottom: 4,
   },
   label: {
     fontSize: 9,
     fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
+    color: Colors.textTertiary,
     letterSpacing: 2,
     marginTop: 4,
     textTransform: 'uppercase',

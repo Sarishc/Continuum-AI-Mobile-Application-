@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { hapticNotification } from '@/utils/haptics';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -145,7 +146,7 @@ export function SpecialistDetailSheet({
   }));
 
   const handleFindSpecialist = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    hapticNotification(Haptics.NotificationFeedbackType.Success);
     handleClose();
     setTimeout(() => router.push('/(tabs)/insights' as any), 300);
   };

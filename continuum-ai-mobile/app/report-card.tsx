@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import Animated, {
   FadeInUp,
@@ -24,9 +25,9 @@ import * as Haptics from 'expo-haptics';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import ViewShot from 'react-native-view-shot';
+import { hapticImpact, hapticNotification } from '@/utils/haptics';
 import { track } from '../services/analytics';
 import Svg, { Path } from 'react-native-svg';
-import { BlurView } from 'expo-blur';
 import { format } from 'date-fns';
 import { AnimatedBackground } from '../components/ui/AnimatedBackground';
 import { ReportCard, ReportCardData } from '../components/ui/ReportCard';
@@ -41,7 +42,10 @@ import { Spacing, BorderRadius } from '../constants/theme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_WIDTH = 390;
-const CARD_SCALE = (SCREEN_W - 48) / CARD_WIDTH;
+// On web the phone frame is capped at 430 px — cap the effective width so the card
+// scales DOWN to fit the phone frame rather than scaling UP to the full viewport.
+const EFFECTIVE_W = Platform.OS === 'web' ? Math.min(SCREEN_W, 430) : SCREEN_W;
+const CARD_SCALE = (EFFECTIVE_W - 48) / CARD_WIDTH;
 
 // ─── Spinning arc (generating state) ─────────────────────────────────────────
 
@@ -116,7 +120,7 @@ export default function ReportCardScreen() {
     entriesCount: timeline?.length ?? 0,
     streakDays: calculateStreak(timeline ?? []),
     topInsight:
-      insights?.[0]?.summary?.slice(0, 100) ??
+      insights?.[0]?.insightText?.slice(0, 100) ??
       'Keep logging your health data to generate insights.',
     topInsightSeverity: insights?.[0]?.severity ?? 'low',
     improvements: [
@@ -129,6 +133,7 @@ export default function ReportCardScreen() {
 
   // ── Capture ─────────────────────────────────────────────────────────────
   const captureCard = async (): Promise<string | null> => {
+    if (Platform.OS === 'web') return null;
     if (!captureRef.current) return null;
     try {
       const uri = await (captureRef.current as any).capture({
@@ -148,7 +153,11 @@ export default function ReportCardScreen() {
       router.push('/paywall' as any);
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS === 'web') {
+      showToast('Download & share from the mobile app — web preview only.', 'info');
+      return;
+    }
+    hapticImpact(Haptics.ImpactFeedbackStyle.Medium);
     setCaptureLoading(true);
     try {
       const uri = await captureCard();
@@ -177,7 +186,11 @@ export default function ReportCardScreen() {
       router.push('/paywall' as any);
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS === 'web') {
+      showToast('Save to Photos is available on the mobile app.', 'info');
+      return;
+    }
+    hapticImpact(Haptics.ImpactFeedbackStyle.Medium);
     setCaptureLoading(true);
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -192,18 +205,103 @@ export default function ReportCardScreen() {
       }
       await MediaLibrary.saveToLibraryAsync(uri);
       track('report_card_saved');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      hapticNotification(Haptics.NotificationFeedbackType.Success);
       showToast('Saved to your photo library! 📸', 'success');
     } finally {
       setCaptureLoading(false);
     }
   };
 
+  // ── Web-specific layout ─────────────────────────────────────────────────
+  if (Platform.OS === 'web') {
+    const webShareText = [
+      `My Continuum AI Health Report — ${reportCardData.generatedDate}`,
+      `Health Score: ${reportCardData.healthScore}/100`,
+      `Conditions: ${reportCardData.conditions.join(', ') || 'None recorded'}`,
+      `Entries tracked: ${reportCardData.entriesCount}`,
+      `Top insight: ${reportCardData.topInsight}`,
+      '',
+      'Track your health with Continuum AI → https://continuum-health.app',
+    ].join('\n');
+
+    const handleWebShare = () => {
+      if (typeof navigator !== 'undefined' && (navigator as any).share) {
+        void (navigator as any).share({
+          title: 'My Health Report Card',
+          text: webShareText,
+          url: 'https://continuum-health.app',
+        });
+      } else if (typeof navigator !== 'undefined' && (navigator as any).clipboard) {
+        void (navigator as any).clipboard.writeText(webShareText);
+        showToast('Summary copied to clipboard! 📋', 'success');
+      } else {
+        showToast('Sharing not available in this browser.', 'error');
+      }
+    };
+
+    return (
+      <View style={[s.root, { paddingTop: insets.top }]}>
+        <AnimatedBackground />
+
+        {/* Header */}
+        <View style={s.topRow}>
+          <TouchableOpacity style={s.iconBtn} onPress={() => router.back()} hitSlop={12}>
+            <Text style={s.closeX}>×</Text>
+          </TouchableOpacity>
+          <Text style={s.screenTitle}>HEALTH REPORT CARD</Text>
+          <View style={s.iconBtn} />
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 100 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Card rendered directly — no ViewShot on web */}
+          <View style={s.webCardContainer}>
+            <ReportCard data={reportCardData} animated />
+          </View>
+
+          {/* Share area */}
+          <View style={s.actionArea}>
+            <Text style={s.actionTitle}>SHARE YOUR PROGRESS</Text>
+            <Text style={s.actionSub}>Show friends how far you've come</Text>
+
+            <View style={[s.buttons, { marginTop: 16 }]}>
+              <TouchableOpacity
+                onPress={isPro ? handleWebShare : () => router.push('/paywall' as any)}
+                activeOpacity={0.88}
+                style={s.btnTouchable}
+              >
+                <LinearGradient
+                  colors={Colors.gradientElectric}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={s.btnPrimary}
+                >
+                  {!isPro && <Text style={s.btnLock}>🔒 </Text>}
+                  <ShareIcon color="#fff" />
+                  <Text style={s.btnPrimaryText}>
+                    {isPro ? '📤 Share Summary' : 'Upgrade to Share'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity disabled style={s.btnGhost} activeOpacity={0.5}>
+                <Text style={s.btnGhostText}>📱 Full share available on mobile app</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ── Native layout ────────────────────────────────────────────────────────
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <AnimatedBackground />
 
-      {/* ── Off-screen ViewShot (for capture) ── */}
+      {/* Off-screen ViewShot (for capture) */}
       <ViewShot
         ref={captureRef}
         options={{ format: 'png', quality: 1.0 }}
@@ -236,10 +334,15 @@ export default function ReportCardScreen() {
             <ReportCard data={reportCardData} animated />
           </View>
 
-          {/* Pro gate overlay — blur bottom 40% for free users */}
+          {/* Pro gate overlay */}
           {!isPro && (
             <View style={s.proGateOverlay}>
-              <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: 'rgba(10, 11, 15, 0.85)' },
+                ]}
+              />
               <View style={s.proGateCard}>
                 <Text style={s.proGateLock}>🔒</Text>
                 <Text style={s.proGateTitle}>Share with Pro</Text>
@@ -330,12 +433,20 @@ const s = StyleSheet.create({
     backgroundColor: Colors.obsidian,
   },
 
-  // Off-screen capture target
+  // Off-screen capture target (native only)
   offscreen: {
     position: 'absolute',
     top: 9999,
     left: 0,
     width: CARD_WIDTH,
+  },
+
+  // Web card container — centers the card within the phone frame
+  webCardContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
 
   // Top row

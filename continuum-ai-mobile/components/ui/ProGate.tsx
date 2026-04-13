@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   ViewStyle,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import { useSubscriptionStore } from '../../store/subscriptionStore';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -65,7 +65,12 @@ export function ProGate({ feature, children, style }: ProGateProps) {
       <View style={s.blurredContent} pointerEvents="none">
         {children}
       </View>
-      <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: 'rgba(10, 11, 15, 0.85)' },
+        ]}
+      />
 
       {/* Upgrade card overlay */}
       <View style={s.card}>
@@ -75,7 +80,7 @@ export function ProGate({ feature, children, style }: ProGateProps) {
 
         <TouchableOpacity
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            hapticImpact(Haptics.ImpactFeedbackStyle.Medium);
             router.push('/paywall' as any);
           }}
           activeOpacity={0.88}

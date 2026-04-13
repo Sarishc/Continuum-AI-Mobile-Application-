@@ -18,8 +18,10 @@ import Animated, {
 import { track } from '../../services/analytics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { healthApi } from '../../api/health';
-import { useHealthStore } from '../../store/healthStore';
+import { hapticImpact, hapticNotification } from '@/utils/haptics';
+import { updateDoc, doc } from 'firebase/firestore';
+import { db, auth } from '../../services/firebase';
+import { updateHealthProfile, addInsight } from '../../services/firestoreService';
 import { useAuthStore } from '../../store/authStore';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -169,7 +171,6 @@ const dot = StyleSheet.create({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function Step3({ onComplete }: { onComplete: () => void }) {
-  const { setProfile } = useHealthStore();
   const { completeOnboarding } = useAuthStore();
 
   const [age, setAge] = useState('');
@@ -181,7 +182,7 @@ export default function Step3({ onComplete }: { onComplete: () => void }) {
   const celebScale = useSharedValue(0);
 
   const toggleCondition = useCallback((item: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     if (item === 'None of the above') {
       setSelectedConditions(['None of the above']);
       return;
@@ -193,32 +194,55 @@ export default function Step3({ onComplete }: { onComplete: () => void }) {
   }, []);
 
   const handleComplete = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    hapticNotification(Haptics.NotificationFeedbackType.Success);
     setSaving(true);
     const conditions = selectedConditions.filter((c) => c !== 'None of the above');
     const medications = medsText.trim()
-      ? medsText.split(',').map((m, i) => ({
-          id: `ob-m${i}`,
+      ? medsText.split(',').map((m) => ({
           name: m.trim(),
           dosage: '',
           frequency: 'As prescribed',
         }))
       : [];
 
-    const profileData = {
-      conditions,
-      medications,
-      allergies: [] as string[],
-      dateOfBirth: age ? String(new Date().getFullYear() - Number(age)) : undefined,
-      biologicalSex: sex as 'male' | 'female' | 'other' | undefined,
-      updatedAt: new Date().toISOString(),
-    };
-
     try {
-      const { data } = await healthApi.updateProfile(profileData);
-      setProfile({ ...profileData, ...data, userId: 'local' });
-    } catch {
-      setProfile({ ...profileData, userId: 'local' });
+      // Save health profile to Firestore
+      await updateHealthProfile({
+        conditions,
+        medications,
+        allergies: [],
+        age: age ? parseInt(age, 10) : null,
+        sex: sex && sex !== 'Prefer not to say' ? sex : null,
+      });
+
+      // Mark onboarding complete in user document
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        await updateDoc(doc(db, 'users', uid), { onboardingComplete: true });
+      }
+
+      // Seed starter insights for new users
+      await Promise.all([
+        addInsight({
+          insightText:
+            'Welcome to Continuum! Upload your first health report or describe your symptoms to get personalised insights.',
+          severity: 'low',
+          category: 'General',
+          confidenceScore: 1.0,
+          specialist: null,
+        }),
+        addInsight({
+          insightText:
+            'Your health profile is set up. The more data you add, the more accurate your insights become.',
+          severity: 'low',
+          category: 'Lifestyle',
+          confidenceScore: 1.0,
+          specialist: null,
+        }),
+      ]);
+    } catch (err) {
+      // Fail silently — don't block navigation
+      console.warn('Onboarding Firestore save failed:', err);
     }
 
     await completeOnboarding();

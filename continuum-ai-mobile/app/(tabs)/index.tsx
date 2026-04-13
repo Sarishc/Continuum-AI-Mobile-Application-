@@ -1,334 +1,717 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Dimensions,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
-import Svg, { Path, Circle } from 'react-native-svg';
-import { format, isThisWeek } from 'date-fns';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+} from 'react-native-reanimated';
+import Svg, { Path, Circle, G } from 'react-native-svg';
+import { format } from 'date-fns';
 
 import { useAuthStore } from '../../store/authStore';
 import { useHealth, calculateStreak } from '../../hooks/useHealth';
 import { useInsights } from '../../hooks/useInsights';
+import { useHealthKit } from '../../hooks/useHealthKit';
+import { isHealthKitAvailable } from '../../services/healthKitService';
+import { useMedications } from '../../hooks/useMedications';
+import { useFamily } from '../../hooks/useFamily';
 
-import { HealthScoreRing } from '../../components/ui/HealthScoreRing';
-import { LoadingCard, LoadingPulse } from '../../components/ui/LoadingPulse';
 import { UploadModal } from '../../components/ui/UploadModal';
-import { SectionHeader } from '../../components/ui/SectionHeader';
-import { InsightCard } from '../../components/ui/InsightCard';
+import { HealthKitPermissionSheet } from '../../components/ui/HealthKitPermissionSheet';
 
-import { Colors } from '../../constants/colors';
-import { FontFamily, FontSize } from '../../constants/typography';
-import { BorderRadius, Spacing, Shadow } from '../../constants/theme';
-import type { Insight, HealthEntry } from '../../types';
+import { Colors, GLASS_1 } from '../../constants/colors';
+import { FontFamily } from '../../constants/typography';
+import type { FirestoreHealthEntry } from '../../services/firestoreService';
+import { formatTimeAgo } from '../../utils/formatters';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CONTENT_W = Math.min(SCREEN_WIDTH, 430);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getGreeting(): string {
   const h = new Date().getHours();
-  if (h < 12) return 'GOOD MORNING';
-  if (h < 17) return 'GOOD AFTERNOON';
-  return 'GOOD EVENING';
+  if (h < 12) return 'Good morning,';
+  if (h < 17) return 'Good afternoon,';
+  return 'Good evening,';
 }
 
-function entryTypeColor(type: HealthEntry['type']): string {
+function getFirstName(name: string | undefined): string {
+  if (!name) return 'there';
+  return name.trim().split(' ')[0];
+}
+
+function entryTypeColor(type: string): string {
   switch (type) {
-    case 'lab_result': return Colors.electric;
-    case 'symptom':    return Colors.caution;
-    case 'vital':      return Colors.positive;
-    case 'medication': return Colors.insight;
-    default:           return Colors.textMuted;
+    case 'lab':     return Colors.primary;
+    case 'symptom': return Colors.alert;
+    case 'vitals':  return Colors.vital;
+    case 'report':  return Colors.insight;
+    default:        return Colors.textTertiary;
   }
 }
 
-function entryTypeLabel(type: HealthEntry['type']): string {
+function entryTypeLabel(type: string): string {
   const map: Record<string, string> = {
-    lab_result: 'Lab Result',
+    lab:     'Lab Result',
     symptom: 'Symptom',
-    vital: 'Vital Sign',
-    medication: 'Medication',
-    appointment: 'Appointment',
-    note: 'Note',
+    vitals:  'Vital Sign',
+    report:  'Report',
+    note:    'Note',
   };
   return map[type] ?? type;
 }
 
-// ─── Inline icons ─────────────────────────────────────────────────────────────
+function scoreColor(score: number): string {
+  if (score >= 80) return '#30D158';
+  if (score >= 60) return '#4C8DFF';
+  if (score >= 40) return '#FF9F0A';
+  return '#FF453A';
+}
 
-function ChevronRight() {
+// ─── Hero Ring ────────────────────────────────────────────────────────────────
+
+function HeroRing({ score }: { score: number }) {
+  const SIZE = 180;
+  const R = 80;
+  const SW = 10;
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+  const circ = 2 * Math.PI * R;
+  const color = scoreColor(score);
+  const pct = Math.min(score / 100, 0.999);
+
+  // Glowing dot at arc end
+  const angleRad = pct * 2 * Math.PI - Math.PI / 2;
+  const dotX = cx + R * Math.cos(angleRad);
+  const dotY = cy + R * Math.sin(angleRad);
+
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <Path d="M9 18L15 12L9 6" stroke={Colors.textMuted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
+    <View style={{ width: SIZE, height: SIZE }}>
+      <Svg width={SIZE} height={SIZE}>
+        {/* 1. Ambient glow */}
+        <Circle cx={cx} cy={cy} r={88} fill="none" stroke={color} strokeWidth={28} strokeOpacity={0.05} />
+        {/* 2. Track arc */}
+        <Circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={SW} />
+        {/* 3. Score arc */}
+        <Circle
+          cx={cx} cy={cy} r={R}
+          fill="none"
+          stroke={color}
+          strokeWidth={SW}
+          strokeLinecap="round"
+          strokeDasharray={[circ * pct, circ]}
+          transform={`rotate(-90, ${cx}, ${cy})`}
+        />
+        {/* 4. Glowing dot outer ring */}
+        <Circle cx={dotX} cy={dotY} r={9} fill="none" stroke={color} strokeOpacity={0.35} strokeWidth={1.5} />
+        {/* 4. Glowing dot core */}
+        <Circle cx={dotX} cy={dotY} r={5} fill={color} />
+      </Svg>
+
+      {/* 5. Center content */}
+      <View style={ringStyles.center} pointerEvents="none">
+        <Text style={[ringStyles.score, { color }]}>{score}</Text>
+        <Text style={ringStyles.outOf}>/100</Text>
+        <Text style={ringStyles.label}>HEALTH SCORE</Text>
+      </View>
+    </View>
   );
 }
 
-function UploadIcon() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path d="M21 15V19C21 20.1 20.1 21 19 21H5C3.9 21 3 20.1 3 19V15" stroke={Colors.electric} strokeWidth={1.8} strokeLinecap="round" />
-      <Path d="M17 8L12 3L7 8" stroke={Colors.electric} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M12 3V15" stroke={Colors.electric} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-function AskAIIcon() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path d="M21 15C21 15.5 20.8 16 20.4 16.4C20 16.8 19.5 17 19 17H7L3 21V5C3 4.5 3.2 4 3.6 3.6C4 3.2 4.5 3 5 3H19C19.5 3 20 3.2 20.4 3.6C20.8 4 21 4.5 21 5V15Z"
-        stroke={Colors.electric} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M8 8L8.5 6.5L9 8L10.5 8.5L9 9L8.5 10.5L8 9L6.5 8.5L8 8Z" stroke={Colors.electric} strokeWidth={1} strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-function TimelineNavIcon() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 4V20" stroke={Colors.electric} strokeWidth={1.5} strokeLinecap="round" />
-      <Circle cx="12" cy="7" r="2.5" stroke={Colors.electric} strokeWidth={1.8} />
-      <Circle cx="12" cy="12" r="2.5" stroke={Colors.electric} strokeWidth={1.8} />
-      <Circle cx="12" cy="17" r="2.5" stroke={Colors.electric} strokeWidth={1.8} />
-    </Svg>
-  );
-}
-
-function ReportCardIcon() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path d="M14 2H6C5.5 2 5 2.2 4.6 2.6C4.2 3 4 3.5 4 4V20C4 20.5 4.2 21 4.6 21.4C5 21.8 5.5 22 6 22H18C18.5 22 19 21.8 19.4 21.4C19.8 21 20 20.5 20 20V8L14 2Z"
-        stroke={Colors.electric} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M14 2V8H20" stroke={Colors.electric} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M8 13H16" stroke={Colors.electric} strokeWidth={1.5} strokeLinecap="round" />
-      <Path d="M8 17H13" stroke={Colors.electric} strokeWidth={1.5} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-// ─── Metric card (horizontal scroll) ─────────────────────────────────────────
-
-interface MetricCardProps {
-  value: string;
-  valueColor: string;
-  label: string;
-  sub: string;
-  onPress?: () => void;
-}
-
-function MetricCard({ value, valueColor, label, sub, onPress }: MetricCardProps) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.85}
-      style={metricStyles.card}
-    >
-      <Text style={[metricStyles.value, { color: valueColor }]}>{value}</Text>
-      <Text style={metricStyles.label}>{label}</Text>
-      <Text style={metricStyles.sub} numberOfLines={1}>{sub}</Text>
-    </TouchableOpacity>
-  );
-}
-
-const metricStyles = StyleSheet.create({
-  card: {
-    width: 160,
-    backgroundColor: Colors.elevated,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: Colors.rim,
-    padding: Spacing[4],
-    gap: 4,
+const ringStyles = StyleSheet.create({
+  center: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  value: {
-    fontSize: 36,
-    fontFamily: FontFamily.displayExtraBold,
-    letterSpacing: -1,
-    lineHeight: 40,
+  score: {
+    fontSize: 52,
+    fontFamily: FontFamily.displayBold,
+    lineHeight: 56,
+  },
+  outOf: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.30)',
+    fontWeight: '400',
   },
   label: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textSecondary,
-  },
-  sub: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    marginTop: 2,
+    fontSize: 9,
+    color: 'rgba(255,255,255,0.25)',
+    fontWeight: '500',
+    letterSpacing: 2.5,
+    marginTop: 6,
   },
 });
 
-// ─── Quick action tile ────────────────────────────────────────────────────────
+// ─── Hero Subtitle rotator ────────────────────────────────────────────────────
+
+const HERO_SUBTITLES = [
+  'Based on {n} health entries',
+  'Improving since last month ↑',
+  '2 insights need attention',
+];
+
+function HeroSubtitle({ entryCount }: { entryCount: number }) {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIdx((i) => (i + 1) % HERO_SUBTITLES.length);
+        setVisible(true);
+      }, 400);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const text = HERO_SUBTITLES[idx].replace('{n}', String(entryCount));
+
+  return (
+    <Text style={heroSubStyles.text}>{visible ? text : ''}</Text>
+  );
+}
+
+const heroSubStyles = StyleSheet.create({
+  text: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.40)',
+    fontWeight: '400',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+});
+
+// ─── Stat Pills Row ────────────────────────────────────────────────────────────
+
+interface StatPillsRowProps {
+  conditionsCount: number;
+  medicationsCount: number;
+  insightsCount: number;
+}
+
+function StatPillsRow({ conditionsCount, medicationsCount, insightsCount }: StatPillsRowProps) {
+  const pills = [
+    { label: `${conditionsCount} Conditions`, dot: '#4C8DFF' },
+    { label: `${medicationsCount} Medications`, dot: '#30D158' },
+    { label: `${insightsCount} Insights`, dot: '#BF5AF2' },
+  ];
+  return (
+    <View style={pillStyles.row}>
+      {pills.map((p) => (
+        <View key={p.label} style={pillStyles.pill}>
+          <View style={[pillStyles.dot, { backgroundColor: p.dot }]} />
+          <Text style={pillStyles.text}>{p.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const pillStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  text: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '400',
+  },
+});
+
+// ─── Quick Action SVG Icons ───────────────────────────────────────────────────
+
+function UploadIcon({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M21 15V19C21 20.1 20.1 21 19 21H5C3.9 21 3 20.1 3 19V15" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path d="M17 8L12 3L7 8" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M12 3V15" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function SparkleIcon({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z"
+        stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M19 3L19.5 5L21.5 5.5L19.5 6L19 8L18.5 6L16.5 5.5L18.5 5L19 3Z"
+        stroke={color} strokeWidth={1.2} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function TimelineIcon({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 4V20" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Circle cx="12" cy="7" r="2.5" stroke={color} strokeWidth={1.8} />
+      <Circle cx="12" cy="13" r="2.5" stroke={color} strokeWidth={1.8} />
+      <Circle cx="12" cy="19" r="2.5" stroke={color} strokeWidth={1.8} />
+      <Path d="M14.5 7H18" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      <Path d="M9.5 13H6" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function ReportIcon({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M14 2H6C5.5 2 5 2.2 4.6 2.6C4.2 3 4 3.5 4 4V20C4 20.5 4.2 21 4.6 21.4C5 21.8 5.5 22 6 22H18C18.5 22 19 21.8 19.4 21.4C19.8 21 20 20.5 20 20V8L14 2Z"
+        stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M14 2V8H20" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M8 13H16M8 17H13" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// ─── Quick Tile ────────────────────────────────────────────────────────────────
 
 interface QuickTileProps {
   icon: React.ReactNode;
+  color: string;
   label: string;
   onPress: () => void;
 }
 
-function QuickTile({ icon, label, onPress }: QuickTileProps) {
+function QuickTile({ icon, color, label, onPress }: QuickTileProps) {
+  const [pressed, setPressed] = useState(false);
   return (
-    <TouchableOpacity
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onPress();
-      }}
-      activeOpacity={0.75}
-      style={tileStyles.tile}
+    <Pressable
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      style={[
+        tileStyles.tile,
+        pressed && { transform: [{ scale: 0.96 }], backgroundColor: 'rgba(76,141,255,0.08)' },
+      ]}
     >
-      <View style={tileStyles.iconWrap}>{icon}</View>
-      <Text style={tileStyles.label}>{label}</Text>
-    </TouchableOpacity>
+      <View style={[tileStyles.iconWrap, { backgroundColor: `${color}24` }]}>
+        {icon}
+      </View>
+      <View style={tileStyles.bottom}>
+        <Text style={tileStyles.label}>{label}</Text>
+        <Text style={tileStyles.arrow}>→</Text>
+      </View>
+    </Pressable>
   );
 }
 
 const tileStyles = StyleSheet.create({
   tile: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: Colors.rim,
-    padding: Spacing[4],
+    width: '47.5%',
+    height: 88,
+    ...GLASS_1,
+    borderRadius: 20,
+    padding: 16,
+    justifyContent: 'space-between',
+  },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
-    gap: Spacing[2],
-    minHeight: 80,
     justifyContent: 'center',
   },
-  iconWrap: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  bottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   label: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.displayMedium,
-    color: Colors.textSecondary,
-    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#FFFFFF',
+  },
+  arrow: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.20)',
   },
 });
 
-// ─── Recent activity row ──────────────────────────────────────────────────────
+// ─── Insight Preview Card ─────────────────────────────────────────────────────
 
-function ActivityRow({ entry, isLast }: { entry: HealthEntry; isLast: boolean }) {
-  const dotColor = entryTypeColor(entry.type);
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: Colors.critical,
+  high: Colors.alert,
+  moderate: Colors.primary,
+  low: Colors.vital,
+};
+
+interface InsightPreviewCardProps {
+  summary: string;
+  severity: string;
+  category: string;
+  timeAgo: string;
+  isUnread: boolean;
+  confidenceScore?: number;
+  onPress: () => void;
+}
+
+function InsightPreviewCard({ summary, severity, category, timeAgo, isUnread, confidenceScore, onPress }: InsightPreviewCardProps) {
+  const accentColor = SEVERITY_COLORS[severity] ?? Colors.primary;
+  const conf = confidenceScore !== undefined ? Math.round(confidenceScore * 100) : null;
+
   return (
-    <View style={activityStyles.row}>
-      <View style={activityStyles.track}>
-        <View style={[activityStyles.dot, { backgroundColor: dotColor }]} />
-        {!isLast && <View style={activityStyles.line} />}
-      </View>
-      <View style={[activityStyles.content, !isLast && activityStyles.contentBorder]}>
-        <View style={activityStyles.contentInner}>
-          <Text style={activityStyles.date}>
-            {format(new Date(entry.recordedAt), 'MMM d, h:mm a')}
-          </Text>
-          <View style={activityStyles.titleRow}>
-            <Text style={activityStyles.typeLabel}>{entryTypeLabel(entry.type)}</Text>
-            <Text style={activityStyles.title} numberOfLines={1}>{entry.title}</Text>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.82} style={insightStyles.outer}>
+      {/* Left accent */}
+      <View style={[insightStyles.accent, { backgroundColor: accentColor }]} />
+      <View style={insightStyles.inner}>
+        {/* Top row */}
+        <View style={insightStyles.topRow}>
+          <View style={[insightStyles.catPill, { backgroundColor: `${accentColor}18` }]}>
+            <Text style={[insightStyles.catText, { color: accentColor }]}>
+              {category.toUpperCase()}
+            </Text>
+          </View>
+          <View style={insightStyles.topRight}>
+            <Text style={insightStyles.timeAgo}>{timeAgo}</Text>
+            {isUnread && <View style={insightStyles.unreadDot} />}
           </View>
         </View>
-        <View style={[activityStyles.typePill, { backgroundColor: `${dotColor}15`, borderColor: `${dotColor}30` }]}>
-          <Text style={[activityStyles.typePillText, { color: dotColor }]}>{entryTypeLabel(entry.type)}</Text>
+        {/* Summary */}
+        <Text style={insightStyles.summary} numberOfLines={2}>{summary}</Text>
+        {/* Footer */}
+        <View style={insightStyles.footer}>
+          {conf !== null ? (
+            <View style={insightStyles.confPill}>
+              <Text style={insightStyles.confText}>{conf}% confident</Text>
+            </View>
+          ) : <View />}
+          <Text style={insightStyles.detailsLink}>Details →</Text>
         </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const insightStyles = StyleSheet.create({
+  outer: {
+    flexDirection: 'row',
+    ...GLASS_1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginHorizontal: 20,
+    marginBottom: 10,
+  },
+  accent: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+  },
+  inner: {
+    flex: 1,
+    padding: 16,
+    gap: 8,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  catPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 100,
+  },
+  catText: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 1.2,
+  },
+  topRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  timeAgo: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.30)',
+  },
+  unreadDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
+  },
+  summary: {
+    fontSize: 15,
+    color: Colors.textPrimary,
+    lineHeight: 22,
+    fontWeight: '400',
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 10,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    marginTop: 2,
+  },
+  confPill: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  confText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.40)',
+  },
+  detailsLink: {
+    fontSize: 13,
+    color: Colors.primary,
+  },
+});
+
+// ─── Recent Activity Row ──────────────────────────────────────────────────────
+
+function RecentActivityRow({ entry, isLast }: { entry: FirestoreHealthEntry; isLast: boolean }) {
+  const typeColor = entryTypeColor(entry.entryType);
+  return (
+    <View style={activityStyles.row}>
+      {/* Left track */}
+      <View style={activityStyles.track}>
+        <View style={[activityStyles.dot, { backgroundColor: typeColor }]} />
+        {!isLast && <View style={activityStyles.line} />}
+      </View>
+      {/* Content */}
+      <View style={[activityStyles.content, { paddingBottom: isLast ? 0 : 16 }]}>
+        <View style={activityStyles.contentRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[activityStyles.typeLabel, { color: typeColor }]}>
+              {entryTypeLabel(entry.entryType).toUpperCase()}
+            </Text>
+            <Text style={activityStyles.title} numberOfLines={1}>{entry.title}</Text>
+          </View>
+          <Text style={[activityStyles.chevron, { color: `${typeColor}50` }]}>›</Text>
+        </View>
+        {!isLast && <View style={activityStyles.sep} />}
       </View>
     </View>
   );
 }
 
 const activityStyles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 12, minHeight: 52 },
-  track: { width: 20, alignItems: 'center', paddingTop: 16 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  line: { width: 1.5, flex: 1, backgroundColor: Colors.rim, marginTop: 4 },
+  row: {
+    flexDirection: 'row',
+    gap: 14,
+  },
+  track: {
+    width: 8,
+    alignItems: 'center',
+    paddingTop: 6,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  line: {
+    flex: 1,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginTop: 4,
+  },
   content: {
     flex: 1,
+  },
+  contentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 12,
     gap: 8,
+    height: 52,
   },
-  contentBorder: { borderBottomWidth: 1, borderBottomColor: Colors.rim },
-  contentInner: { flex: 1, gap: 2 },
-  date: { fontSize: 11, fontFamily: FontFamily.bodyRegular, color: Colors.textMuted },
-  titleRow: { gap: 1 },
-  typeLabel: { fontSize: 10, fontFamily: FontFamily.bodyMedium, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8 },
-  title: { fontSize: FontSize.md, fontFamily: FontFamily.displayMedium, color: Colors.textPrimary },
-  typePill: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    flexShrink: 0,
+  typeLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    marginBottom: 2,
   },
-  typePillText: { fontSize: 10, fontFamily: FontFamily.bodySemiBold },
-});
-
-// ─── Loading skeleton ─────────────────────────────────────────────────────────
-
-function DashboardSkeleton() {
-  return (
-    <View style={{ gap: Spacing[6] }}>
-      <LoadingPulse height={200} borderRadius={BorderRadius['2xl']} />
-      <View style={{ gap: Spacing[3] }}>
-        <LoadingPulse height={20} width="40%" borderRadius={10} />
-        <View style={{ flexDirection: 'row', gap: Spacing[3] }}>
-          <LoadingCard style={{ flex: 1, height: 100 }} lines={2} />
-          <LoadingCard style={{ flex: 1, height: 100 }} lines={2} />
-          <LoadingCard style={{ flex: 1, height: 100 }} lines={2} />
-        </View>
-      </View>
-      <View style={{ gap: Spacing[3] }}>
-        <LoadingPulse height={20} width="50%" borderRadius={10} />
-        {[0, 1, 2].map((i) => (
-          <LoadingCard key={i} style={{ height: 68 }} lines={2} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─── Avatar ───────────────────────────────────────────────────────────────────
-
-function InitialsAvatar({ name }: { name?: string }) {
-  const initials = name
-    ? name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
-    : 'U';
-  return (
-    <View style={avatarStyles.wrap}>
-      <Text style={avatarStyles.text}>{initials}</Text>
-    </View>
-  );
-}
-
-const avatarStyles = StyleSheet.create({
-  wrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.rimActive,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  text: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.displayBold,
+  title: {
+    fontSize: 14,
+    fontWeight: '500',
     color: Colors.textPrimary,
+    lineHeight: 20,
+  },
+  chevron: {
+    fontSize: 18,
+    fontWeight: '300',
+  },
+  sep: {
+    height: 0.5,
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
 });
+
+// ─── Family Widget ────────────────────────────────────────────────────────────
+
+function FamilyWidget() {
+  const router = useRouter();
+  const { user } = useAuthStore();
+  const { familyGroup, memberSummaries } = useFamily();
+
+  if (!familyGroup) return null;
+
+  const otherActives = familyGroup.members.filter(
+    (m) => m.status === 'active' && m.userId !== user?.id
+  );
+  if (otherActives.length === 0) return null;
+
+  const hasAlert = Array.from(memberSummaries.values()).some(
+    (s) => (s?.unreadInsights ?? 0) > 0
+  );
+
+  return (
+    <Animated.View entering={FadeInUp.delay(270).duration(350)}>
+      <Pressable
+        onPress={() => router.push('/family' as any)}
+        style={({ pressed }) => [styles.familyWidget, pressed && { opacity: 0.85 }]}
+      >
+        <View style={styles.familyWidgetRow}>
+          <Text style={styles.familyWidgetTitle}>Family</Text>
+          {hasAlert && (
+            <View style={styles.familyAlertBadge}>
+              <Text style={styles.familyAlertText}>⚠ Needs attention</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Overlapping avatars */}
+        <View style={styles.familyAvatarRow}>
+          {otherActives.slice(0, 4).map((member, i) => {
+            const s = memberSummaries.get(member.userId);
+            const alert = (s?.unreadInsights ?? 0) > 0;
+            return (
+              <View
+                key={member.userId}
+                style={[
+                  styles.familyAvatar,
+                  {
+                    backgroundColor: member.avatarColor + '25',
+                    borderColor: alert ? '#FF9F0A' : '#080808',
+                    marginLeft: i === 0 ? 0 : -10,
+                    zIndex: 10 - i,
+                  },
+                ]}
+              >
+                <Text style={[styles.familyAvatarText, { color: member.avatarColor }]}>
+                  {member.name.charAt(0).toUpperCase()}
+                </Text>
+                {alert && <View style={styles.familyAlertDot} />}
+              </View>
+            );
+          })}
+          {otherActives.length > 4 && (
+            <View style={[styles.familyAvatar, { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: '#080808', marginLeft: -10 }]}>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)' }}>+{otherActives.length - 4}</Text>
+            </View>
+          )}
+        </View>
+
+        <Text style={styles.familyWidgetSub}>Tap to view family health →</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+// ─── Medication Widget ────────────────────────────────────────────────────────
+
+function MedicationWidget() {
+  const router = useRouter();
+  const { schedules, todaysLogs } = useMedications();
+
+  if (schedules.length === 0) return null;
+
+  const todayTotal = schedules.reduce((s, m) => s + m.times.length, 0);
+  const todayTaken = todaysLogs.filter((l) => l.status === 'taken').length;
+  const allDone = todayTotal > 0 && todayTaken === todayTotal;
+
+  return (
+    <Animated.View entering={FadeInUp.delay(260).duration(350)}>
+      <Pressable
+        onPress={() => router.push('/(tabs)/medications' as any)}
+        style={({ pressed }) => [
+          styles.medWidget,
+          allDone && styles.medWidgetDone,
+          pressed && { opacity: 0.85 },
+        ]}
+      >
+        <View style={styles.medWidgetRow}>
+          <Text style={styles.medWidgetTitle}>Today's Medications</Text>
+          <Text style={[styles.medWidgetCount, allDone && styles.medWidgetCountDone]}>
+            {todayTaken}/{todayTotal} taken
+          </Text>
+        </View>
+        {/* Progress bar */}
+        <View style={styles.medWidgetBar}>
+          <View
+            style={[
+              styles.medWidgetBarFill,
+              {
+                width: `${todayTotal > 0 ? Math.round((todayTaken / todayTotal) * 100) : 0}%`,
+                backgroundColor: allDone ? '#30D158' : '#4C8DFF',
+              },
+            ]}
+          />
+        </View>
+        {/* Pill tags */}
+        <View style={styles.medWidgetTags}>
+          {schedules.slice(0, 3).map((med, i) => (
+            <View key={i} style={[styles.medTag, { borderColor: med.color + '35', backgroundColor: med.color + '15' }]}>
+              <View style={[styles.medTagDot, { backgroundColor: med.color }]} />
+              <Text style={[styles.medTagText, { color: med.color }]}>{med.medicationName}</Text>
+            </View>
+          ))}
+          {schedules.length > 3 && (
+            <Text style={styles.medTagMore}>+{schedules.length - 3} more</Text>
+          )}
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
 
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 
@@ -336,339 +719,272 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuthStore();
+  const { healthProfile, timeline, healthScore, isLoading, isRefetching, refetchAll } = useHealth();
+  const { insights } = useInsights();
+  const { isAvailable, hasPermission, isSyncing, lastSyncTime, syncHealthData } = useHealthKit();
 
-  const {
-    healthProfile,
-    healthScore,
-    timeline,
-    isLoading: healthLoading,
-    isRefetching: healthRefetching,
-    refetchAll: refetchHealth,
-  } = useHealth();
+  const [uploadVisible, setUploadVisible] = useState(false);
+  const [showHealthKitSheet, setShowHealthKitSheet] = useState(false);
 
-  const {
-    insights,
-    isLoading: insightsLoading,
-    isRefetching: insightsRefetching,
-    refetchAll: refetchInsights,
-    unreadCount,
-  } = useInsights();
+  const firstName = getFirstName(user?.name);
+  const streak = useMemo(() => calculateStreak(timeline), [timeline]);
+  const topInsights = useMemo(() => insights.slice(0, 2), [insights]);
+  const recentEntries = useMemo(() => timeline.slice(0, 3), [timeline]);
+  const unreadCount = useMemo(() => insights.filter((i) => !i.isRead).length, [insights]);
 
-  const [uploadModalVisible, setUploadModalVisible] = useState(false);
-  const [showBriefCard, setShowBriefCard] = useState(false);
+  // Stat pill counts from real Firestore data
+  const conditionsCount = healthProfile?.conditions?.length ?? 0;
+  const medicationsCount = (healthProfile?.medications as any[])?.length ?? 0;
+  const insightsCount = insights.length;
 
-  const isLoading = healthLoading || insightsLoading;
-  const isRefreshing = healthRefetching || insightsRefetching;
+  const handleRefresh = useCallback(() => refetchAll(), [refetchAll]);
+  const tabBarHeight = 49 + Math.max(insets.bottom, 0);
 
-  // Show weekly brief card on Sundays or if not viewed this week
-  useEffect(() => {
-    const check = async () => {
-      const isSunday = new Date().getDay() === 0;
-      const lastBriefDate = await AsyncStorage.getItem('last_brief_viewed');
-      const viewedThisWeek = lastBriefDate
-        ? isThisWeek(new Date(lastBriefDate), { weekStartsOn: 0 })
-        : false;
-      setShowBriefCard(isSunday || !viewedThisWeek);
-    };
-    check().catch(() => setShowBriefCard(false));
-  }, []);
-
-  const onRefresh = useCallback(() => {
-    refetchHealth();
-    refetchInsights();
-  }, [refetchHealth, refetchInsights]);
-
-  const conditionCount = healthProfile?.conditions?.length ?? 0;
-  const medicationCount = healthProfile?.medications?.length ?? 0;
-  const recentTimeline = timeline.slice(0, 4);
-  const topInsights = insights.slice(0, 3);
-  const todayLabel = format(new Date(), 'EEEE, MMMM d');
-
-  const scoreColor =
-    (healthScore ?? 0) >= 80 ? Colors.positive
-    : (healthScore ?? 0) >= 60 ? Colors.electric
-    : (healthScore ?? 0) >= 40 ? Colors.caution
-    : Colors.critical;
+  // Health score: show 0 for new users with no data
+  const displayScore = healthScore ?? 0;
+  const isNewUser = !isLoading && timeline.length === 0 && insights.length === 0;
 
   return (
     <View style={styles.root}>
       <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 100 },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + 32 }]}
         showsVerticalScrollIndicator={false}
+        bounces={Platform.OS !== 'web'}
         refreshControl={
           <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.electric}
-            colors={[Colors.electric]}
+            refreshing={isRefetching}
+            onRefresh={handleRefresh}
+            tintColor={Colors.primary}
           />
         }
       >
+
         {/* ── Header ─────────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(0).duration(400)} style={styles.header}>
-          <View style={styles.headerLeft}>
+        <Animated.View
+          entering={FadeInDown.duration(300)}
+          style={[styles.header, { paddingTop: insets.top + 12 }]}
+        >
+          <View>
             <Text style={styles.greeting}>{getGreeting()}</Text>
-            <Text style={styles.name}>
-              {(user?.name ?? 'there').split(' ')[0].toUpperCase()}
-            </Text>
-            <Text style={styles.dateLabel}>{todayLabel}</Text>
+            <Text style={styles.name}>{firstName}</Text>
           </View>
-          <TouchableOpacity
-            onPress={() => router.push('/(tabs)/profile')}
-            activeOpacity={0.8}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <InitialsAvatar name={user?.name} />
-          </TouchableOpacity>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {firstName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
         </Animated.View>
 
-        {isLoading ? (
-          <DashboardSkeleton />
-        ) : (
-          <View style={styles.sections}>
-            {/* ── Hero: Health Score ────────────────────────────────────── */}
-            <Animated.View entering={FadeInDown.delay(80).duration(400)}>
-              <View style={styles.heroSection}>
-                <HealthScoreRing score={healthScore ?? 0} size={160} />
-                <Text style={styles.heroSub}>
-                  Based on {timeline.length} health {timeline.length === 1 ? 'entry' : 'entries'}
-                </Text>
+        {/* ── Hero Score Section ──────────────────────────────────────────── */}
+        <Animated.View entering={FadeInUp.delay(80).duration(400)} style={styles.heroSection}>
+          {isLoading ? (
+            <View style={{ width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.05)', alignSelf: 'center' }} />
+          ) : displayScore === 0 ? (
+            <View style={styles.noScoreContainer}>
+              <Text style={styles.noScoreValue}>—</Text>
+              <Text style={styles.noScoreLabel}>Add health data to calculate your score</Text>
+            </View>
+          ) : (
+            <HeroRing score={displayScore} />
+          )}
+          <HeroSubtitle entryCount={timeline.length} />
+          <StatPillsRow
+            conditionsCount={conditionsCount}
+            medicationsCount={medicationsCount}
+            insightsCount={insightsCount}
+          />
+        </Animated.View>
 
-                {/* Stat chips */}
-                <View style={styles.statChipsRow}>
-                  <View style={styles.statChip}>
-                    <Text style={styles.statChipNum}>{conditionCount}</Text>
-                    <Text style={styles.statChipLabel}>Conditions</Text>
-                  </View>
-                  <View style={[styles.statChip, styles.statChipMid]}>
-                    <Text style={styles.statChipNum}>{medicationCount}</Text>
-                    <Text style={styles.statChipLabel}>Medications</Text>
-                  </View>
-                  <View style={styles.statChip}>
-                    <Text style={[styles.statChipNum, { color: Colors.electric }]}>{unreadCount ?? insights.length}</Text>
-                    <Text style={styles.statChipLabel}>Insights</Text>
-                  </View>
-                </View>
+        {/* ── Thin separator ──────────────────────────────────────────────── */}
+        <View style={styles.separator} />
+
+        {/* ── Quick Actions ───────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInUp.delay(200).duration(350)}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+          </View>
+          <View style={styles.tileGrid}>
+            <QuickTile
+              icon={<UploadIcon color="#4C8DFF" />}
+              color="#4C8DFF"
+              label="Upload"
+              onPress={() => setUploadVisible(true)}
+            />
+            <QuickTile
+              icon={<SparkleIcon color="#BF5AF2" />}
+              color="#BF5AF2"
+              label="Ask AI"
+              onPress={() => router.push('/(tabs)/chat' as any)}
+            />
+            <QuickTile
+              icon={<TimelineIcon color="#30D158" />}
+              color="#30D158"
+              label="Timeline"
+              onPress={() => router.push('/(tabs)/timeline' as any)}
+            />
+            <QuickTile
+              icon={<ReportIcon color="#FF9F0A" />}
+              color="#FF9F0A"
+              label="Report"
+              onPress={() => router.push('/report-card' as any)}
+            />
+          </View>
+        </Animated.View>
+
+        {/* ── Apple Health Connect Card ────────────────────────────────── */}
+        {isAvailable && !hasPermission && (
+          <Animated.View entering={FadeInUp.delay(240).duration(350)}>
+            <Pressable
+              onPress={() => setShowHealthKitSheet(true)}
+              style={styles.hkConnectCard}
+            >
+              <View style={styles.hkIconWrap}>
+                <Text style={{ fontSize: 20 }}>❤️</Text>
               </View>
-            </Animated.View>
-
-            {/* ── Live Metrics Row ──────────────────────────────────────── */}
-            <Animated.View entering={FadeInDown.delay(140).duration(400)}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.metricsScroll}
-              >
-                <MetricCard
-                  value={(healthScore ?? 0) >= 70 ? 'LOW' : (healthScore ?? 0) >= 40 ? 'MED' : 'HIGH'}
-                  valueColor={(healthScore ?? 0) >= 70 ? Colors.positive : (healthScore ?? 0) >= 40 ? Colors.caution : Colors.critical}
-                  label="Risk Level"
-                  sub="Stable this week"
-                />
-                <MetricCard
-                  value={String(insights.filter((i) => i.severity === 'critical' || i.severity === 'high').length)}
-                  valueColor={Colors.caution}
-                  label="Active Alerts"
-                  sub="Tap to review"
-                  onPress={() => router.push('/(tabs)/insights')}
-                />
-                <MetricCard
-                  value={String(calculateStreak(timeline))}
-                  valueColor={Colors.electric}
-                  label="Day Streak"
-                  sub={calculateStreak(timeline) > 0 ? '🔥 Keep it up' : 'Start today'}
-                />
-                <MetricCard
-                  value={timeline.length > 0 ? 'Today' : 'None'}
-                  valueColor={Colors.positive}
-                  label="Last Entry"
-                  sub={timeline[0]?.title ?? 'Add your first entry'}
-                />
-              </ScrollView>
-            </Animated.View>
-
-            {/* ── Quick Actions ─────────────────────────────────────────── */}
-            <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.quickGrid}>
-              <View style={styles.quickRow}>
-                <QuickTile
-                  icon={<UploadIcon />}
-                  label="Upload"
-                  onPress={() => setUploadModalVisible(true)}
-                />
-                <QuickTile
-                  icon={<AskAIIcon />}
-                  label="Ask AI"
-                  onPress={() => router.push('/(tabs)/chat')}
-                />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.hkCardTitle}>Connect Apple Health</Text>
+                <Text style={styles.hkCardSub}>Sync glucose, heart rate, steps & more</Text>
               </View>
-              <View style={styles.quickRow}>
-                <QuickTile
-                  icon={<TimelineNavIcon />}
-                  label="Timeline"
-                  onPress={() => router.push('/(tabs)/timeline')}
-                />
-                <QuickTile
-                  icon={<ReportCardIcon />}
-                  label="Report Card"
-                  onPress={() => router.push('/report-card')}
-                />
+              <Text style={styles.hkConnectLink}>Connect →</Text>
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* Web / Android fallback banner */}
+        {!isHealthKitAvailable() && (
+          <Animated.View entering={FadeInUp.delay(240).duration(350)}>
+            <View style={styles.hkWebCard}>
+              <Text style={{ fontSize: 22 }}>📱</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.hkWebTitle}>Apple Health available on iPhone</Text>
+                <Text style={styles.hkWebSub}>Download Continuum on iOS to sync health data</Text>
               </View>
-            </Animated.View>
+            </View>
+          </Animated.View>
+        )}
 
-            {/* ── Weekly Brief card ─────────────────────────────────────── */}
-            {showBriefCard && (
-              <Animated.View entering={FadeInDown.delay(240).duration(400)}>
-                <TouchableOpacity
-                  activeOpacity={0.88}
-                  style={styles.briefCard}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push('/weekly-brief' as any);
-                    AsyncStorage.setItem('last_brief_viewed', new Date().toISOString());
-                    setShowBriefCard(false);
-                  }}
-                >
-                  <LinearGradient
-                    colors={['#1a1d27', '#0f1117']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.briefCardGradient}
-                  >
-                    <View style={styles.briefCardLeft}>
-                      <Text style={styles.briefCardLabel}>WEEKLY BRIEF</Text>
-                      <Text style={styles.briefCardTitle}>
-                        {'Your health summary\nfor this week'}
-                      </Text>
-                      <Text style={styles.briefCardCta}>Tap to view →</Text>
-                    </View>
-                    <Text style={styles.briefCardEmoji}>📊</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-
-            {/* ── Top Insights ──────────────────────────────────────────── */}
-            {topInsights.length > 0 && (
-              <Animated.View entering={FadeInDown.delay(260).duration(400)} style={styles.section}>
-                <SectionHeader
-                  title="INSIGHTS"
-                  rightAction={{ label: 'See all', onPress: () => router.push('/(tabs)/insights') }}
-                />
-                {topInsights.map((insight, idx) => (
-                  <Animated.View
-                    key={insight.id}
-                    entering={FadeInUp.delay(idx * 80).duration(350)}
-                  >
-                    <InsightCard
-                      insight={insight}
-                      healthCategory={insight.healthCategory}
-                      confidence={Math.round((insight.confidence ?? 0.8) * 100)}
-                      timeAgo={formatTimeAgo(insight.generatedAt)}
-                      onPress={() => router.push('/(tabs)/insights')}
-                    />
-                  </Animated.View>
-                ))}
-              </Animated.View>
-            )}
-
-            {/* ── Recent Activity ───────────────────────────────────────── */}
-            <Animated.View entering={FadeInDown.delay(340).duration(400)} style={styles.section}>
-              <SectionHeader
-                title="RECENT ACTIVITY"
-                rightAction={{ label: 'View all', onPress: () => router.push('/(tabs)/timeline') }}
-              />
-              {recentTimeline.length === 0 ? (
-                <View style={styles.emptyActivity}>
-                  <Text style={styles.emptyText}>
-                    No entries yet. Add your first health data above.
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.activityList}>
-                  {recentTimeline.map((entry, idx) => (
-                    <ActivityRow
-                      key={entry.id}
-                      entry={entry}
-                      isLast={idx === recentTimeline.length - 1}
-                    />
-                  ))}
-                </View>
-              )}
-            </Animated.View>
+        {/* Syncing indicator */}
+        {isAvailable && hasPermission && isSyncing && (
+          <View style={styles.hkSyncRow}>
+            <ActivityIndicator size="small" color="#4C8DFF" />
+            <Text style={styles.hkSyncText}>Syncing Apple Health...</Text>
           </View>
         )}
+
+        {/* Last sync time */}
+        {isAvailable && hasPermission && lastSyncTime && !isSyncing && (
+          <Pressable onPress={syncHealthData} style={styles.hkLastSyncRow}>
+            <Text style={{ fontSize: 12 }}>❤️</Text>
+            <Text style={styles.hkLastSyncText}>
+              Apple Health synced {formatTimeAgo(lastSyncTime)} · Tap to refresh
+            </Text>
+          </Pressable>
+        )}
+
+        {/* ── Medication Widget ─────────────────────────────────────────────── */}
+        <MedicationWidget />
+
+        {/* ── Family Widget ─────────────────────────────────────────────────── */}
+        <FamilyWidget />
+
+        {/* ── Empty state for new users ────────────────────────────────────── */}
+        {isNewUser && (
+          <Animated.View entering={FadeInUp.delay(280).duration(350)} style={styles.sectionGap}>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyWave}>👋</Text>
+              <Text style={styles.emptyTitle}>Welcome to Continuum</Text>
+              <Text style={styles.emptySub}>
+                Upload your first health report or describe your symptoms to get started.
+              </Text>
+              <Pressable
+                onPress={() => setUploadVisible(true)}
+                style={styles.emptyBtn}
+              >
+                <Text style={styles.emptyBtnText}>Add Health Data</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* ── Insights Preview ────────────────────────────────────────────── */}
+        {!isNewUser && topInsights.length > 0 && (
+          <Animated.View entering={FadeInUp.delay(280).duration(350)} style={styles.sectionGap}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Insights</Text>
+              <View style={styles.insightsHeaderRight}>
+                {unreadCount > 0 && (
+                  <View style={styles.unreadPill}>
+                    <Text style={styles.unreadPillText}>{unreadCount} unread</Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  onPress={() => router.push('/(tabs)/insights' as any)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.seeAll}>See all</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            {topInsights.map((insight) => (
+              <InsightPreviewCard
+                key={insight.id}
+                summary={insight.insightText}
+                severity={insight.severity}
+                category={insight.category}
+                timeAgo={format(new Date(insight.createdAt), 'MMM d')}
+                isUnread={!insight.isRead}
+                confidenceScore={insight.confidenceScore}
+                onPress={() => router.push('/(tabs)/insights' as any)}
+              />
+            ))}
+          </Animated.View>
+        )}
+
+        {/* ── Recent Activity ──────────────────────────────────────────────── */}
+        {recentEntries.length > 0 && (
+          <Animated.View entering={FadeInUp.delay(360).duration(350)} style={styles.sectionGap}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Activity</Text>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/timeline' as any)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.seeAll}>See all</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.activityList}>
+              {recentEntries.map((entry, i) => (
+                <RecentActivityRow
+                  key={entry.id}
+                  entry={entry}
+                  isLast={i === recentEntries.length - 1}
+                />
+              ))}
+            </View>
+          </Animated.View>
+        )}
+
       </ScrollView>
 
-      <UploadModal
-        visible={uploadModalVisible}
-        onClose={() => setUploadModalVisible(false)}
-        onNavigateToChat={() => router.push('/(tabs)/chat')}
+      <UploadModal visible={uploadVisible} onClose={() => setUploadVisible(false)} />
+      <HealthKitPermissionSheet
+        visible={showHealthKitSheet}
+        onClose={() => setShowHealthKitSheet(false)}
+        onGranted={() => {
+          // Permission was granted — sync happens inside the hook automatically
+        }}
       />
     </View>
   );
 }
 
-function formatTimeAgo(dateStr?: string): string {
-  if (!dateStr) return '—';
-  const ms = Date.now() - new Date(dateStr).getTime();
-  const h = Math.floor(ms / 3600000);
-  if (h < 1) return 'Just now';
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.void,
+    backgroundColor: '#000000',
   },
-  // Weekly brief card
-  briefCard: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(79,126,255,0.4)',
-  },
-  briefCardGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-  },
-  briefCardLeft: { gap: 4, flex: 1 },
-  briefCardLabel: {
-    fontSize: 10,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.electric,
-    letterSpacing: 2,
-  },
-  briefCardTitle: {
-    fontSize: 16,
-    fontFamily: FontFamily.displaySemiBold,
-    color: Colors.textPrimary,
-    lineHeight: 22,
-    marginTop: 2,
-  },
-  briefCardCta: {
-    fontSize: 12,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    marginTop: 4,
-  },
-  briefCardEmoji: {
-    fontSize: 32,
-    marginLeft: Spacing[4],
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing[4],
-    gap: Spacing[6],
+  scroll: {
+    gap: 0,
   },
 
   // Header
@@ -676,102 +992,337 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingBottom: 8,
   },
-  headerLeft: { gap: 2 },
   greeting: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textTertiary,
-    letterSpacing: 2,
+    fontSize: 15,
+    fontWeight: '400',
+    color: 'rgba(255,255,255,0.50)',
   },
   name: {
-    fontSize: 36,
-    fontFamily: FontFamily.displayExtraBold,
-    color: Colors.textPrimary,
-    letterSpacing: -1,
-    lineHeight: 40,
-  },
-  dateLabel: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
+    fontSize: 32,
+    fontFamily: FontFamily.bodyBold,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
     marginTop: 2,
   },
-
-  // Sections
-  sections: { gap: Spacing[6] },
-  section: { gap: Spacing[3] },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(76,141,255,0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(76,141,255,0.40)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#4C8DFF',
+  },
 
   // Hero
   heroSection: {
     alignItems: 'center',
-    gap: Spacing[3],
-    paddingVertical: Spacing[4],
+    paddingVertical: 32,
+    paddingHorizontal: 24,
   },
-  heroSub: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    marginTop: -Spacing[1],
+
+  // Separator
+  separator: {
+    height: 0.5,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginHorizontal: 24,
+    marginVertical: 16,
   },
-  statChipsRow: {
+
+  // Section headers
+  sectionHeader: {
     flexDirection: 'row',
-    gap: Spacing[2],
-  },
-  statChip: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.rim,
-    paddingVertical: Spacing[2],
-    paddingHorizontal: Spacing[3],
     alignItems: 'center',
-    gap: 2,
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    marginBottom: 12,
   },
-  statChipMid: {
-    borderColor: 'rgba(79,126,255,0.2)',
-    backgroundColor: Colors.electricMist,
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
-  statChipNum: {
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.displayBold,
-    color: Colors.textPrimary,
-  },
-  statChipLabel: {
-    fontSize: 10,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-  },
-
-  // Metrics
-  metricsScroll: {
-    gap: Spacing[3],
-    paddingRight: Spacing[4],
-  },
-
-  // Quick actions
-  quickGrid: {
-    gap: Spacing[3],
-  },
-  quickRow: {
+  insightsHeaderRight: {
     flexDirection: 'row',
-    gap: Spacing[3],
+    alignItems: 'center',
+    gap: 8,
+  },
+  unreadPill: {
+    backgroundColor: 'rgba(255,159,10,0.15)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  unreadPillText: {
+    fontSize: 11,
+    color: Colors.alert,
+    fontWeight: '500',
+  },
+  seeAll: {
+    fontSize: 15,
+    color: Colors.primary,
+  },
+
+  // Tile grid
+  tileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+
+  // Section gap
+  sectionGap: {
+    marginTop: 24,
   },
 
   // Activity
-  activityList: {},
-  emptyActivity: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.rim,
-    padding: Spacing[4],
+  activityList: {
+    paddingHorizontal: 24,
   },
-  emptyText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
+
+  // New user empty state
+  emptyCard: {
+    marginHorizontal: 20,
+    padding: 24,
+    backgroundColor: 'rgba(76,141,255,0.08)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(76,141,255,0.25)',
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  emptyWave: {
+    fontSize: 32,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptySub: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.50)',
+    textAlign: 'center',
     lineHeight: 20,
+    marginBottom: 20,
+  },
+  emptyBtn: {
+    backgroundColor: '#4C8DFF',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+  },
+  emptyBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'white',
+  },
+
+  // No score state
+  noScoreContainer: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  noScoreValue: {
+    fontSize: 72,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.20)',
+    lineHeight: 80,
+  },
+  noScoreLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.35)',
+    textAlign: 'center',
+    marginTop: 8,
+    maxWidth: 220,
+  },
+
+  // HealthKit cards
+  hkConnectCard: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 4,
+    padding: 16,
+    backgroundColor: 'rgba(255,45,85,0.08)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,45,85,0.25)',
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  hkIconWrap: {
+    width: 40, height: 40,
+    borderRadius: 10,
+    backgroundColor: '#FF2D55',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hkCardTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  hkCardSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.45)',
+  },
+  hkConnectLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4C8DFF',
+  },
+  hkWebCard: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 4,
+    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  hkWebTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.60)',
+  },
+  hkWebSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.30)',
+    marginTop: 2,
+  },
+  hkSyncRow: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hkSyncText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.40)',
+  },
+  hkLastSyncRow: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hkLastSyncText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.30)',
+  },
+  // ─── Medication Widget ──────────────────────────────────────────────────────
+  medWidget: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 4,
+    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  medWidgetDone: {
+    borderColor: 'rgba(48,209,88,0.25)',
+  },
+  medWidgetRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  medWidgetTitle: {
+    fontSize: 15, fontWeight: '600', color: '#FFFFFF',
+  },
+  medWidgetCount: {
+    fontSize: 13, color: 'rgba(255,255,255,0.40)',
+  },
+  medWidgetCountDone: {
+    color: '#30D158',
+  },
+  medWidgetBar: {
+    height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden', marginBottom: 10,
+  },
+  medWidgetBarFill: {
+    height: '100%', borderRadius: 2,
+  },
+  medWidgetTags: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+  },
+  medTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 999, borderWidth: 0.5,
+  },
+  medTagDot: {
+    width: 5, height: 5, borderRadius: 2.5,
+  },
+  medTagText: {
+    fontSize: 11, fontWeight: '500',
+  },
+  medTagMore: {
+    fontSize: 11, color: 'rgba(255,255,255,0.30)',
+    alignSelf: 'center',
+  },
+  // ─── Family Widget ──────────────────────────────────────────────────────────
+  familyWidget: {
+    marginHorizontal: 20, marginTop: 16, marginBottom: 4,
+    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 16, borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  familyWidgetRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 12,
+  },
+  familyWidgetTitle: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  familyAlertBadge: {
+    backgroundColor: 'rgba(255,159,10,0.15)',
+    borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3,
+    borderWidth: 0.5, borderColor: 'rgba(255,159,10,0.30)',
+  },
+  familyAlertText: { fontSize: 11, color: '#FF9F0A', fontWeight: '500' },
+  familyAvatarRow: {
+    flexDirection: 'row', alignItems: 'center', marginBottom: 10,
+  },
+  familyAvatar: {
+    width: 38, height: 38, borderRadius: 19,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2,
+  },
+  familyAvatarText: { fontSize: 15, fontWeight: '700' },
+  familyAlertDot: {
+    position: 'absolute', top: 0, right: 0,
+    width: 9, height: 9, borderRadius: 5,
+    backgroundColor: '#FF9F0A',
+    borderWidth: 1.5, borderColor: '#080808',
+  },
+  familyWidgetSub: {
+    fontSize: 12, color: 'rgba(255,255,255,0.30)',
   },
 });

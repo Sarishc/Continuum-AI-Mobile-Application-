@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Animated,
@@ -15,8 +16,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
+import { useDemoStore } from '../../store/demoStore';
 import { AnimatedBackground } from '../../components/ui/AnimatedBackground';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -196,25 +199,210 @@ const inputStyles = StyleSheet.create({
   },
 });
 
+// ─── Forgot Password Modal ────────────────────────────────────────────────────
+
+function ForgotPasswordModal({
+  visible,
+  onClose,
+  onReset,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onReset: (email: string) => Promise<void>;
+}) {
+  const [email, setEmail] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleReset = async () => {
+    if (!email.trim()) return;
+    setSending(true);
+    setErr(null);
+    await onReset(email.trim());
+    setSending(false);
+    setSent(true);
+  };
+
+  const handleClose = () => {
+    setSent(false);
+    setEmail('');
+    setErr(null);
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
+      <View style={modalStyles.overlay}>
+        <View style={modalStyles.card}>
+          <Text style={modalStyles.title}>Reset password</Text>
+          {sent ? (
+            <>
+              <Text style={modalStyles.sentText}>
+                Reset email sent ✓{'\n'}Check your inbox.
+              </Text>
+              <TouchableOpacity onPress={handleClose} style={modalStyles.btn} activeOpacity={0.8}>
+                <Text style={modalStyles.btnText}>Done</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={modalStyles.sub}>
+                Enter your email and we'll send a reset link.
+              </Text>
+              <TextInput
+                style={modalStyles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Email address"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                selectionColor={Colors.electric}
+              />
+              {err && <Text style={modalStyles.err}>{err}</Text>}
+              <TouchableOpacity
+                onPress={handleReset}
+                style={[modalStyles.btn, !email.trim() && { opacity: 0.45 }]}
+                disabled={!email.trim() || sending}
+                activeOpacity={0.8}
+              >
+                {sending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={modalStyles.btnText}>Send reset email</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleClose} style={modalStyles.cancelBtn} activeOpacity={0.7}>
+                <Text style={modalStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing[6],
+  },
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#111',
+    borderRadius: 20,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: Spacing[6],
+    gap: Spacing[3],
+  },
+  title: {
+    fontSize: 20,
+    fontFamily: FontFamily.displaySemiBold,
+    color: Colors.textPrimary,
+  },
+  sub: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textSecondary,
+  },
+  sentText: {
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.positive,
+    lineHeight: 24,
+    textAlign: 'center',
+  },
+  input: {
+    height: 48,
+    backgroundColor: Colors.depth,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.rim,
+    paddingHorizontal: Spacing[4],
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textPrimary,
+  },
+  err: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.critical,
+  },
+  btn: {
+    height: 48,
+    backgroundColor: Colors.electric,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnText: {
+    fontSize: FontSize.md,
+    fontFamily: FontFamily.displaySemiBold,
+    color: '#fff',
+  },
+  cancelBtn: { alignItems: 'center', paddingVertical: 4 },
+  cancelText: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textMuted,
+  },
+});
+
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { login, isLoading, error, clearError } = useAuth();
+  const { login, isLoading, error, clearError, resetPassword } = useAuth();
+  const { isDemoMode } = useDemoStore();
+
+  // If demo mode was set (e.g. on web), go straight to the app
+  useEffect(() => {
+    if (isDemoMode) {
+      router.replace('/(tabs)');
+    }
+  }, [isDemoMode]);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showForgot, setShowForgot] = useState(false);
   const passwordRef = useRef<TextInput>(null);
+
+  // Shake animation for error
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  const shakeForm = () => {
+    shakeAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
+    ]).start();
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) return;
     clearError();
-    await login({ email: email.trim(), password });
+    const ok = await login({ email: email.trim(), password });
+    if (!ok) shakeForm();
+  };
+
+  const handleForgotPassword = async (resetEmail: string) => {
+    await resetPassword(resetEmail);
   };
 
   const handleSignupNav = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     router.push('/(auth)/signup');
   };
 
@@ -223,6 +411,12 @@ export default function LoginScreen() {
   return (
     <View style={styles.root}>
       <AnimatedBackground />
+
+      <ForgotPasswordModal
+        visible={showForgot}
+        onClose={() => setShowForgot(false)}
+        onReset={handleForgotPassword}
+      />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -244,8 +438,8 @@ export default function LoginScreen() {
             <Text style={styles.tagline}>Health Intelligence</Text>
           </View>
 
-          {/* ── Form ─────────────────────────────────────────────────────── */}
-          <View style={styles.formSection}>
+          {/* ── Form (animated shake on error) ───────────────────────────── */}
+          <Animated.View style={[styles.formSection, { transform: [{ translateX: shakeAnim }] }]}>
             {error ? (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{error}</Text>
@@ -276,7 +470,7 @@ export default function LoginScreen() {
 
             <TouchableOpacity
               style={styles.forgotContainer}
-              onPress={() => {}}
+              onPress={() => setShowForgot(true)}
               activeOpacity={0.7}
             >
               <Text style={styles.forgotText}>Forgot password?</Text>
@@ -309,7 +503,7 @@ export default function LoginScreen() {
               <Text style={styles.dividerText}>or</Text>
               <View style={styles.dividerLine} />
             </View>
-          </View>
+          </Animated.View>
 
           {/* ── Footer ───────────────────────────────────────────────────── */}
           <View style={styles.footer}>

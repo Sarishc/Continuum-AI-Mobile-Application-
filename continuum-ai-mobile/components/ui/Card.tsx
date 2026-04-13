@@ -1,9 +1,18 @@
 import React from 'react';
-import { View, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, StyleSheet, ViewStyle, TouchableOpacity, Platform } from 'react-native';
 import { Colors } from '../../constants/colors';
 
-type CardVariant = 'base' | 'elevated' | 'glass' | 'metric';
+// BlurView only on native — web uses a plain rgba fallback
+let BlurView: React.ComponentType<{ intensity: number; tint: string; style?: any; children?: React.ReactNode }> | null = null;
+if (Platform.OS !== 'web') {
+  try {
+    BlurView = require('expo-blur').BlurView;
+  } catch {
+    BlurView = null;
+  }
+}
+
+type CardVariant = 'base' | 'elevated' | 'glass' | 'metric' | 'data';
 
 interface CardProps {
   children: React.ReactNode;
@@ -11,7 +20,7 @@ interface CardProps {
   accentColor?: string;
   style?: ViewStyle;
   onPress?: () => void;
-  // Legacy props kept for backward compatibility
+  // Legacy props
   elevated?: boolean;
   noPadding?: boolean;
 }
@@ -25,7 +34,6 @@ export function Card({
   elevated,
   noPadding,
 }: CardProps) {
-  // Resolve variant (support legacy `elevated` bool)
   const resolvedVariant: CardVariant = variant ?? (elevated ? 'elevated' : 'base');
 
   const inner = (
@@ -65,106 +73,148 @@ function CardInner({
 }) {
   const padding = noPadding ? 0 : 16;
 
-  // ── GLASS ──────────────────────────────────────────────────────────────────
+  // ── GLASS (primary card type) ───────────────────────────────────────────────
+  // Native: BlurView + rgba overlay
+  // Web: rgba background only (BlurView unavailable on web)
   if (variant === 'glass') {
+    if (BlurView && Platform.OS !== 'web') {
+      return (
+        <BlurView
+          intensity={12}
+          tint="dark"
+          style={[styles.glassContainer, style]}
+        >
+          {/* rgba overlay on top of blur */}
+          <View style={styles.glassOverlay} />
+          {/* Top-edge inner highlight */}
+          <View style={styles.glassHighlight} />
+          <View style={{ padding }}>{children}</View>
+        </BlurView>
+      );
+    }
+    // Web fallback
     return (
-      <View
-        style={[
-          styles.base,
-          styles.glassBorder,
-          { borderRadius: 20, overflow: 'hidden' },
-          style,
-        ]}
-      >
-        <LinearGradient
-          colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={[StyleSheet.absoluteFill]}
-        />
+      <View style={[styles.glassContainer, styles.glassWebFallback, style]}>
+        <View style={styles.glassHighlight} />
         <View style={{ padding }}>{children}</View>
       </View>
     );
   }
 
-  // ── METRIC ─────────────────────────────────────────────────────────────────
+  // ── DATA (large content blocks) ─────────────────────────────────────────────
+  if (variant === 'data') {
+    if (BlurView && Platform.OS !== 'web') {
+      return (
+        <BlurView intensity={8} tint="dark" style={[styles.dataContainer, style]}>
+          <View style={styles.glassOverlayData} />
+          <View style={styles.glassHighlight} />
+          <View style={{ padding: noPadding ? 0 : 20 }}>{children}</View>
+        </BlurView>
+      );
+    }
+    return (
+      <View style={[styles.dataContainer, styles.dataWebFallback, style]}>
+        <View style={styles.glassHighlight} />
+        <View style={{ padding: noPadding ? 0 : 20 }}>{children}</View>
+      </View>
+    );
+  }
+
+  // ── METRIC ──────────────────────────────────────────────────────────────────
   if (variant === 'metric') {
     const barColor = accentColor ?? Colors.primary;
     return (
-      <View style={[styles.elevated, styles.elevatedShadow, { borderRadius: 20, overflow: 'hidden' }, style]}>
-        {/* Left accent bar */}
+      <View style={[styles.glassContainer, styles.glassWebFallback, { flexDirection: 'row' }, style]}>
         <View
           style={[
             styles.accentBar,
-            {
-              backgroundColor: barColor,
-              borderTopLeftRadius: 20,
-              borderBottomLeftRadius: 20,
-            },
+            { backgroundColor: barColor, borderTopLeftRadius: 24, borderBottomLeftRadius: 24 },
           ]}
         />
+        <View style={styles.glassHighlight} />
         <View style={{ flex: 1, padding }}>{children}</View>
       </View>
     );
   }
 
-  // ── ELEVATED ───────────────────────────────────────────────────────────────
+  // ── ELEVATED ────────────────────────────────────────────────────────────────
   if (variant === 'elevated') {
     return (
-      <View style={[styles.elevated, styles.elevatedShadow, { padding }, style]}>
-        {children}
+      <View style={[styles.elevatedContainer, style]}>
+        <View style={styles.glassHighlight} />
+        <View style={{ padding }}>{children}</View>
       </View>
     );
   }
 
-  // ── BASE (default) ─────────────────────────────────────────────────────────
+  // ── BASE (default) ──────────────────────────────────────────────────────────
   return (
-    <View style={[styles.base, { padding }, style]}>
-      {/* Top inner highlight */}
-      <View style={styles.topHighlight} pointerEvents="none" />
+    <View style={[styles.baseContainer, { padding }, style]}>
+      <View style={styles.glassHighlight} />
       {children}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  base: {
-    backgroundColor: '#14161E',
+  // ── Glass (primary) ──────────────────────────────────────────────────────────
+  glassContainer: {
     borderWidth: 1,
-    borderColor: '#252838',
-    borderRadius: 20,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 24,
     overflow: 'hidden',
   },
-  topHighlight: {
+  glassOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  glassWebFallback: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  glassHighlight: {
     position: 'absolute',
-    height: 1,
     top: 0,
     left: 0,
     right: 0,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     zIndex: 1,
-    pointerEvents: 'none',
   } as ViewStyle,
-  elevated: {
-    backgroundColor: '#1A1D27',
-    borderWidth: 1,
-    borderColor: '#353852',
-    borderRadius: 20,
-    flexDirection: 'row',
-  },
-  elevatedShadow: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 6,
-  } as ViewStyle,
-  glassBorder: {
+
+  // ── Data ─────────────────────────────────────────────────────────────────────
+  dataContainer: {
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 28,
+    overflow: 'hidden',
   },
+  glassOverlayData: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  dataWebFallback: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+
+  // ── Elevated ──────────────────────────────────────────────────────────────────
+  elevatedContainer: {
+    backgroundColor: Colors.elevated,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+
+  // ── Base ─────────────────────────────────────────────────────────────────────
+  baseContainer: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+
+  // ── Accent bar (metric) ───────────────────────────────────────────────────────
   accentBar: {
     width: 3,
     alignSelf: 'stretch',

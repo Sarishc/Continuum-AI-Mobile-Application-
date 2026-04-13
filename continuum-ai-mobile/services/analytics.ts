@@ -1,4 +1,5 @@
 import apiClient from '../api/client';
+import { firebaseLogEvent } from './firebase';
 
 // ─── Event types ──────────────────────────────────────────────────────────────
 
@@ -34,6 +35,9 @@ export async function track(
   event: AnalyticsEvent,
   properties?: Record<string, string | number | boolean>
 ): Promise<void> {
+  // Mirror every event to Firebase Analytics (best-effort)
+  firebaseLogEvent(event, properties);
+
   try {
     await apiClient.post('/analytics/track', {
       event,

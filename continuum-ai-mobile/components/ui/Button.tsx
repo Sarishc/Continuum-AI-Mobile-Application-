@@ -5,10 +5,9 @@ import {
   StyleSheet,
   ViewStyle,
   View,
-  Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -20,7 +19,7 @@ import Animated, {
   SharedValue,
 } from 'react-native-reanimated';
 import { Colors } from '../../constants/colors';
-import { FontFamily, FontSize } from '../../constants/typography';
+import { FontFamily } from '../../constants/typography';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md' | 'lg';
@@ -79,7 +78,7 @@ function LoadingDots() {
 
 const dotStyles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 5, alignItems: 'center' },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.textPrimary },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },
 });
 
 // ── Button ────────────────────────────────────────────────────────────────────
@@ -97,103 +96,68 @@ export function Button({
   leftIcon,
 }: ButtonProps) {
   const scale = useSharedValue(1);
-  const isSecondaryPressed = useSharedValue(0);
-
+  const opacity = useSharedValue(1);
   const isDisabled = disabled || loading;
 
   const handlePressIn = useCallback(() => {
-    scale.value = withSpring(0.96, { damping: 18, stiffness: 300 });
-    if (variant === 'secondary') isSecondaryPressed.value = withTiming(1, { duration: 80 });
-  }, [variant]);
+    scale.value = withSpring(0.96, { damping: 20, stiffness: 300 });
+    opacity.value = withTiming(0.85, { duration: 80 });
+  }, []);
 
   const handlePressOut = useCallback(() => {
-    scale.value = withSpring(1, { damping: 18, stiffness: 300 });
-    if (variant === 'secondary') isSecondaryPressed.value = withTiming(0, { duration: 80 });
-  }, [variant]);
+    scale.value = withSpring(1, { damping: 20, stiffness: 300 });
+    opacity.value = withTiming(1, { duration: 80 });
+  }, []);
 
   const handlePress = useCallback(() => {
     if (isDisabled) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     onPress();
   }, [isDisabled, onPress]);
 
-  const animatedContainerStyle = useAnimatedStyle(() => ({
+  const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+    opacity: isDisabled ? 0.35 : opacity.value,
   }));
 
-  const secondaryBgStyle = useAnimatedStyle(() => ({
-    backgroundColor: isSecondaryPressed.value === 1
-      ? Colors.primaryMist
-      : 'transparent',
-    borderColor: isSecondaryPressed.value === 1
-      ? Colors.primaryBright
-      : Colors.rim,
-  }));
-
-  const heights: Record<ButtonSize, number> = { sm: 44, md: 52, lg: 60 };
-  const fontSizes: Record<ButtonSize, number> = { sm: FontSize.sm, md: FontSize.md, lg: FontSize.lg };
+  const heights: Record<ButtonSize, number> = { sm: 44, md: 50, lg: 58 };
+  const fontSizes: Record<ButtonSize, number> = { sm: 15, md: 17, lg: 17 };
   const paddingH: Record<ButtonSize, number> = { sm: 16, md: 24, lg: 32 };
 
   const h = heights[size];
   const fs = fontSizes[size];
   const ph = paddingH[size];
 
-  // ── PRIMARY ─────────────────────────────────────────────────────────────────
+  // ── PRIMARY (flat color, Apple style) ────────────────────────────────────────
   if (variant === 'primary') {
     return (
-      <Animated.View
-        style={[
-          animatedContainerStyle,
-          fullWidth && styles.fullWidth,
-          isDisabled && styles.disabledOpacity,
-          style,
-        ]}
-      >
+      <Animated.View style={[animatedStyle, fullWidth && styles.fullWidth, style]}>
         <Pressable
           onPress={handlePress}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           disabled={isDisabled}
-          style={[styles.base, { height: h, borderRadius: 9999 }]}
+          style={[
+            styles.base,
+            styles.primary,
+            { height: h, paddingHorizontal: ph },
+          ]}
         >
-          <LinearGradient
-            colors={['#4F7EFF', '#3560E0']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={[
-              StyleSheet.absoluteFill,
-              { borderRadius: 9999 },
-            ]}
-          />
-          <View
-            style={[
-              styles.content,
-              { paddingHorizontal: ph },
-              !isDisabled && Platform.OS === 'ios' && styles.electricShadow,
-            ]}
-          >
-            {leftIcon && !loading && (
-              <View style={styles.iconWrap}>{leftIcon}</View>
-            )}
-            {loading ? (
-              <LoadingDots />
-            ) : (
-              <Text style={[styles.primaryText, { fontSize: fs }, textStyle]}>
-                {label}
-              </Text>
-            )}
-          </View>
+          {leftIcon && !loading && <View style={styles.iconWrap}>{leftIcon}</View>}
+          {loading ? (
+            <LoadingDots />
+          ) : (
+            <Text style={[styles.primaryText, { fontSize: fs }, textStyle]}>{label}</Text>
+          )}
         </Pressable>
       </Animated.View>
     );
   }
 
-  // ── GHOST ───────────────────────────────────────────────────────────────────
+  // ── GHOST ────────────────────────────────────────────────────────────────────
   if (variant === 'ghost') {
     return (
-      <Animated.View
-        style={[animatedContainerStyle, fullWidth && styles.fullWidth, isDisabled && styles.disabledOpacity, style]}
-      >
+      <Animated.View style={[animatedStyle, fullWidth && styles.fullWidth, style]}>
         <Pressable
           onPress={handlePress}
           onPressIn={handlePressIn}
@@ -201,9 +165,7 @@ export function Button({
           disabled={isDisabled}
           style={[styles.base, { height: h, paddingHorizontal: ph }]}
         >
-          {leftIcon && !loading && (
-            <View style={styles.iconWrap}>{leftIcon}</View>
-          )}
+          {leftIcon && !loading && <View style={styles.iconWrap}>{leftIcon}</View>}
           {loading ? (
             <LoadingDots />
           ) : (
@@ -214,95 +176,101 @@ export function Button({
     );
   }
 
-  // ── SECONDARY & DANGER ──────────────────────────────────────────────────────
-  const isDanger = variant === 'danger';
-
-  return (
-    <Animated.View
-      style={[animatedContainerStyle, fullWidth && styles.fullWidth, isDisabled && styles.disabledOpacity, style]}
-    >
-      <Animated.View
-        style={[
-          styles.base,
-          { height: h, borderRadius: 9999, borderWidth: 1, overflow: 'hidden' },
-          isDanger
-            ? { backgroundColor: Colors.critical, borderColor: Colors.critical }
-            : secondaryBgStyle,
-        ]}
-      >
+  // ── SECONDARY ────────────────────────────────────────────────────────────────
+  if (variant === 'secondary') {
+    return (
+      <Animated.View style={[animatedStyle, fullWidth && styles.fullWidth, style]}>
         <Pressable
           onPress={handlePress}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           disabled={isDisabled}
-          style={[styles.content, { paddingHorizontal: ph }]}
+          style={[
+            styles.base,
+            styles.secondary,
+            { height: h, paddingHorizontal: ph },
+          ]}
         >
-          {leftIcon && !loading && (
-            <View style={styles.iconWrap}>{leftIcon}</View>
-          )}
+          {leftIcon && !loading && <View style={styles.iconWrap}>{leftIcon}</View>}
           {loading ? (
             <LoadingDots />
           ) : (
-            <Text
-              style={[
-                isDanger ? styles.primaryText : styles.secondaryText,
-                { fontSize: fs },
-                textStyle,
-              ]}
-            >
-              {label}
-            </Text>
+            <Text style={[styles.secondaryText, { fontSize: fs }, textStyle]}>{label}</Text>
           )}
         </Pressable>
       </Animated.View>
+    );
+  }
+
+  // ── DANGER ───────────────────────────────────────────────────────────────────
+  return (
+    <Animated.View style={[animatedStyle, fullWidth && styles.fullWidth, style]}>
+      <Pressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={isDisabled}
+        style={[
+          styles.base,
+          styles.danger,
+          { height: h, paddingHorizontal: ph },
+        ]}
+      >
+        {leftIcon && !loading && <View style={styles.iconWrap}>{leftIcon}</View>}
+        {loading ? (
+          <LoadingDots />
+        ) : (
+          <Text style={[styles.primaryText, { fontSize: fs }, textStyle]}>{label}</Text>
+        )}
+      </Pressable>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: 9999,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  content: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-    flex: 1,
-    alignSelf: 'stretch',
+    overflow: 'hidden',
   },
   fullWidth: {
     width: '100%',
   },
-  disabledOpacity: {
-    opacity: 0.35,
-  },
   iconWrap: {
     flexShrink: 0,
   },
+  // Variants
+  primary: {
+    backgroundColor: Colors.primary,  // flat #4C8DFF — no gradient
+  },
+  secondary: {
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  danger: {
+    backgroundColor: Colors.critical,
+  },
+  // Text
   primaryText: {
-    fontFamily: FontFamily.displaySemiBold,
-    color: Colors.textPrimary,
-    letterSpacing: 0.2,
+    fontFamily: FontFamily.bodySemiBold,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: 0,
   },
   secondaryText: {
-    fontFamily: FontFamily.displayMedium,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '500',
     color: Colors.textSecondary,
-    letterSpacing: 0.2,
+    letterSpacing: 0,
   },
   ghostText: {
-    fontFamily: FontFamily.displayMedium,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '500',
     color: Colors.primary,
-    letterSpacing: 0.2,
-    textDecorationLine: 'none',
+    letterSpacing: 0,
   },
-  electricShadow: {
-    shadowColor: '#4F7EFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-  } as ViewStyle,
 });

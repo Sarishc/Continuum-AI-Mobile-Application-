@@ -23,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import Svg, {
   Path,
   Circle,
@@ -780,7 +781,7 @@ export default function Analytics() {
 
   const handleShare = () => {
     if (!data) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     Share.share({
       message: generateInvestorSnapshot(data),
       title: 'Continuum AI — Metrics Snapshot',
@@ -824,7 +825,7 @@ export default function Analytics() {
           <TouchableOpacity
             key={tab}
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              hapticImpact(Haptics.ImpactFeedbackStyle.Light);
               setActiveTab(tab);
             }}
             style={[s.tab, activeTab === tab && s.tabActive]}

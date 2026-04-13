@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(userId) {
+      return request.auth != null &&
+             request.auth.uid == userId;
+    }
+
+    function isValidEntry() {
+      return request.resource.data.userId == request.auth.uid &&
+             request.resource.data.keys().hasAll([
+               'userId', 'entryType', 'title', 'createdAt'
+             ]);
+    }
+
+    match /users/{userId} {
+      allow read:   if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false; // Never delete users
+    }
+
+    match /healthProfiles/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /healthEntries/{entryId} {
+      allow read:   if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) && isValidEntry();
+      allow update: if isOwner(resource.data.userId);
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    match /insights/{insightId} {
+      allow read:   if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isOwner(resource.data.userId);
+      allow delete: if false;
+    }
+
+    match /conversations/{conversationId} {
+      allow read, write: if request.auth != null &&
+                           (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isOwner(request.resource.data.userId);
+    }
+
+    match /healthScores/{scoreId} {
+      allow read:          if isOwner(resource.data.userId);
+      allow create:        if isOwner(request.resource.data.userId);
+      allow update, delete: if false;
+    }
+
+    match /medicationSchedules/{scheduleId} {
+      allow read, write: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+    }
+
+    match /medicationLogs/{logId} {
+      allow read: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /consultations/{consultationId} {
+      allow read: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+      allow update: if false; // Only updated by backend/worker
+      allow delete: if false;
+    }
+
+    match /doctorResponses/{responseId} {
+      allow read: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false; // Backend only
+    }
+
+    match /familyGroups/{groupId} {
+      allow read: if request.auth != null && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.members.hasAny([{ userId: request.auth.uid }])
+      );
+      allow create: if request.auth != null &&
+        request.resource.data.ownerId == request.auth.uid;
+      allow update: if request.auth != null &&
+        resource.data.ownerId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /familyInvites/{inviteId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if false;
+    }
+  }
+}

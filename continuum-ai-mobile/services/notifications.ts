@@ -7,19 +7,22 @@ import apiClient from '../api/client';
 
 // ─── Global notification handler ─────────────────────────────────────────────
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 // ─── Permission + token registration ─────────────────────────────────────────
 
 export async function registerForPushNotifications(): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
   if (!Device.isDevice) return null;
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -43,6 +46,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
 // ─── Register + sync push token to backend ───────────────────────────────────
 
 export async function registerAndSyncPushToken(): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
   const token = await registerForPushNotifications();
   if (!token) return null;
   try {
@@ -64,6 +68,7 @@ export async function scheduleLocalNotification(
   seconds: number = 1,
   data?: Record<string, string>
 ): Promise<void> {
+  if (Platform.OS === 'web') return;
   try {
     await Notifications.scheduleNotificationAsync({
       content: { title, body, sound: true, data: data ?? {} },
@@ -83,6 +88,7 @@ export function useNotificationListener(
   onReceived?: (notification: Notifications.Notification) => void
 ) {
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     const sub = Notifications.addNotificationReceivedListener((n) => {
       onReceived?.(n);
     });
@@ -96,6 +102,7 @@ export function useNotificationTap() {
   const router = useRouter();
 
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as
         | Record<string, string>
@@ -106,6 +113,10 @@ export function useNotificationTap() {
       // Named types get priority routing
       if (type === 'weekly_brief') {
         setTimeout(() => router.push('/weekly-brief' as any), 300);
+        return;
+      }
+      if (type === 'medication_reminder' || type === 'missed_medication') {
+        setTimeout(() => router.push('/(tabs)/medications' as any), 300);
         return;
       }
       if (screen) {
@@ -121,6 +132,7 @@ export function useNotificationTap() {
 // ─── Weekly brief scheduling ──────────────────────────────────────────────────
 
 export async function scheduleWeeklyBrief(): Promise<void> {
+  if (Platform.OS === 'web') return;
   try {
     // Cancel any existing weekly brief notifications
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
@@ -155,6 +167,7 @@ export async function scheduleWeeklyBrief(): Promise<void> {
 }
 
 export async function cancelWeeklyBrief(): Promise<void> {
+  if (Platform.OS === 'web') return;
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     const existing = scheduled.filter(

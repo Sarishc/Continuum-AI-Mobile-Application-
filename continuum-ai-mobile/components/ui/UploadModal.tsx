@@ -26,19 +26,20 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 import * as DocumentPicker from 'expo-document-picker';
-import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import { hapticNotification } from '@/utils/haptics';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { track } from '../../services/analytics';
+import { analyzeHealthText, generateInsights } from '../../services/aiService';
+import { addInsight } from '../../services/firestoreService';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { BorderRadius, Spacing } from '../../constants/theme';
-import { healthApi } from '../../api/health';
 import { showToast } from '../../store/toastStore';
-import { useHealthStore } from '../../store/healthStore';
 import { useSubscriptionStore } from '../../store/subscriptionStore';
+import { useHealth } from '../../hooks/useHealth';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MODAL_HEIGHT = SCREEN_HEIGHT * 0.62;
@@ -275,8 +276,7 @@ export interface UploadModalProps {
 }
 
 export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalProps) {
-  const queryClient = useQueryClient();
-  const { addEntry } = useHealthStore();
+  const { createEntry, healthProfile, timeline } = useHealth();
   const { canUploadEntry, incrementEntries, entriesThisMonth } = useSubscriptionStore();
   const router = useRouter();
 
@@ -325,10 +325,10 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
   const handleSuccess = () => {
     incrementEntries();
     track('entry_uploaded', { mode });
-    queryClient.invalidateQueries({ queryKey: ['health', 'timeline'] });
-    queryClient.invalidateQueries({ queryKey: ['insights'] });
     setMode('success');
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    hapticNotification(Haptics.NotificationFeedbackType.Success);
+    // The usePredictions hook auto-fires on timeline length change —
+    // no explicit trigger needed here.
     setTimeout(() => {
       handleClose();
       showToast('Data added — analysing…', 'info');
@@ -336,7 +336,65 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
   };
 
   // ── Upload document ────────────────────────────────────────────────────────
+  const runDocumentUpload = async (
+    fileName: string,
+    readText: () => Promise<string>
+  ) => {
+    setUploadingFileName(fileName);
+    setMode('uploading');
+    setIsSubmitting(true);
+    try {
+      const rawText = await readText().catch(() => `Uploaded file: ${fileName}`);
+
+      // Step 1: AI analysis (best-effort — don't block on failure)
+      const structured = await analyzeHealthText(rawText, healthProfile ?? undefined);
+
+      // Step 2: Save to Firestore with structured data
+      await createEntry({
+        entryType: 'report',
+        title: structured?.suggestedTitle ?? fileName.replace(/\.[^/.]+$/, ''),
+        rawText: rawText.slice(0, 5000),
+        structuredData: structured ?? {
+          conditions: [],
+          medications: [],
+          symptoms: [],
+          labValues: {},
+          summary: `Document uploaded: ${fileName}`,
+          riskFlags: [],
+          suggestedTitle: fileName,
+        },
+        sourceFile: fileName,
+      });
+
+      // Step 3: Generate fresh insights in background (best-effort)
+      if (structured && timeline) {
+        generateInsights(healthProfile ?? {}, timeline)
+          .then((newInsights) => Promise.all(newInsights.map((i) => addInsight(i))))
+          .catch(() => {});
+      }
+
+      handleSuccess();
+    } catch {
+      setMode('error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handlePickDocument = async () => {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.pdf,image/*,.txt';
+      input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        void runDocumentUpload(file.name || 'document', () => file.text());
+      };
+      input.click();
+      return;
+    }
+
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'image/*'],
@@ -345,37 +403,9 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
       if (result.canceled) return;
 
       const file = result.assets[0];
-      setUploadingFileName(file.name ?? 'document');
-      setMode('uploading');
-      setIsSubmitting(true);
-      try {
-        const fd = new FormData();
-        fd.append('file', {
-          uri: file.uri,
-          name: file.name ?? 'upload.pdf',
-          type: file.mimeType ?? 'application/octet-stream',
-        } as any);
-        fd.append('type', 'lab_result');
-        fd.append('recorded_at', new Date().toISOString());
-        await healthApi.uploadEntry(fd);
-        handleSuccess();
-      } catch {
-        // Offline fallback — still show success
-        addEntry({
-          id: `local-${Date.now()}`,
-          userId: 'local',
-          type: 'lab_result',
-          title: file.name ?? 'Uploaded Document',
-          tags: ['upload', 'document'],
-          attachments: [],
-          recordedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-        });
-        handleSuccess();
-      }
+      await runDocumentUpload(file.name ?? 'document', async () => `Uploaded: ${file.name}`);
     } catch {
       setMode('error');
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -390,31 +420,42 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
   const handleSubmitNote = async () => {
     if (!noteText.trim()) return;
     setIsSubmitting(true);
+    setMode('uploading');
+    setUploadingFileName('');
     try {
-      await healthApi.createEntry({
-        type: 'note',
-        title: noteText.trim().slice(0, 60),
-        description: noteText.trim(),
-        tags: ['note'],
-        attachments: [],
-        recordedAt: new Date().toISOString(),
+      // Step 1: AI analysis (best-effort)
+      const structured = await analyzeHealthText(noteText, healthProfile ?? undefined);
+
+      // Step 2: Save to Firestore
+      await createEntry({
+        entryType: 'note',
+        title: structured?.suggestedTitle ?? noteText.trim().slice(0, 60),
+        rawText: noteText.trim(),
+        structuredData: structured ?? {
+          conditions: [],
+          medications: [],
+          symptoms: [],
+          labValues: {},
+          summary: noteText.trim(),
+          riskFlags: [],
+          suggestedTitle: noteText.trim().slice(0, 60),
+        },
+        sourceFile: null,
       });
+
+      // Step 3: Generate fresh insights in background (best-effort)
+      if (structured && timeline) {
+        generateInsights(healthProfile ?? {}, timeline)
+          .then((newInsights) => Promise.all(newInsights.map((i) => addInsight(i))))
+          .catch(() => {});
+      }
+
+      handleSuccess();
     } catch {
-      addEntry({
-        id: `local-${Date.now()}`,
-        userId: 'local',
-        type: 'note',
-        title: noteText.trim().slice(0, 60),
-        description: noteText.trim(),
-        tags: ['note'],
-        attachments: [],
-        recordedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      });
+      setMode('error');
     } finally {
       setIsSubmitting(false);
     }
-    handleSuccess();
   };
 
   return (
@@ -448,8 +489,12 @@ export function UploadModal({ visible, onClose, onNavigateToChat }: UploadModalP
             {mode === 'uploading' && (
               <Animated.View entering={FadeIn.duration(200)} style={styles.successContainer}>
                 <SpinningArc />
-                <Text style={styles.uploadingLabel}>UPLOADING</Text>
-                <Text style={styles.uploadingFile} numberOfLines={1}>{uploadingFileName}</Text>
+                <Text style={styles.uploadingLabel}>
+                  {uploadingFileName ? 'UPLOADING' : 'ANALYSING'}
+                </Text>
+                {!!uploadingFileName && (
+                  <Text style={styles.uploadingFile} numberOfLines={1}>{uploadingFileName}</Text>
+                )}
               </Animated.View>
             )}
 
@@ -664,13 +709,13 @@ const styles = StyleSheet.create({
   } as any,
   sheet: {
     height: MODAL_HEIGHT,
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(18,18,18,0.98)',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: Colors.border,
+    borderTopWidth: 0.5,
+    borderLeftWidth: 0.5,
+    borderRightWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
     overflow: 'hidden',
   },
   handleRow: {
@@ -682,7 +727,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.surfaceElevated,
+    backgroundColor: 'rgba(255,255,255,0.20)',
   },
 
   // ── Success / Uploading / Error ────────────────────────────────────────────
@@ -740,8 +785,8 @@ const styles = StyleSheet.create({
     gap: Spacing[4],
   },
   sheetTitle: {
-    fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.bodySemiBold,
+    fontSize: 20,
+    fontWeight: '600',
     color: Colors.textPrimary,
   },
   sheetSubtitle: {
@@ -757,16 +802,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing[4],
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
     padding: Spacing[4],
   },
   optionIconWrap: {
     width: 44,
     height: 44,
-    borderRadius: BorderRadius.md,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },

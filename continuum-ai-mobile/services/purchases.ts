@@ -8,6 +8,7 @@ const REVENUECAT_IOS_KEY = process.env.EXPO_PUBLIC_RC_IOS_KEY ?? '';
 const REVENUECAT_ANDROID_KEY = process.env.EXPO_PUBLIC_RC_ANDROID_KEY ?? '';
 
 export async function initializePurchases(userId: string): Promise<void> {
+  if (Platform.OS === 'web') return;
   const apiKey =
     Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
 
@@ -15,6 +16,7 @@ export async function initializePurchases(userId: string): Promise<void> {
 }
 
 export async function getOfferings() {
+  if (Platform.OS === 'web') return null;
   try {
     const offerings = await Purchases.getOfferings();
     return offerings.current;
@@ -24,15 +26,22 @@ export async function getOfferings() {
 }
 
 export async function purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo> {
+  if (Platform.OS === 'web') {
+    throw new Error('Purchases are not available on web');
+  }
   const { customerInfo } = await Purchases.purchasePackage(pkg);
   return customerInfo;
 }
 
 export async function restorePurchases(): Promise<CustomerInfo> {
+  if (Platform.OS === 'web') {
+    throw new Error('Purchases are not available on web');
+  }
   return await Purchases.restorePurchases();
 }
 
 export async function getCustomerInfo(): Promise<CustomerInfo | null> {
+  if (Platform.OS === 'web') return null;
   try {
     return await Purchases.getCustomerInfo();
   } catch {

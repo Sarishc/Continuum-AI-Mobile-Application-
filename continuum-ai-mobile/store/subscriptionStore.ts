@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import { CustomerInfo } from 'react-native-purchases';
 import { isPro as checkIsPro } from '../services/purchases';
 
@@ -34,7 +35,7 @@ interface SubscriptionStore {
 export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
   isPro: false,
   customerInfo: null,
-  isLoading: true,
+  isLoading: Platform.OS !== 'web',
   isProTrial: false,
   proTrialEndsAt: null,
   entriesThisMonth: 0,

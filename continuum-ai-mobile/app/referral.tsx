@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact, hapticNotification } from '@/utils/haptics';
 import * as Clipboard from 'expo-clipboard';
 import {
   getMyReferralCode,
@@ -229,7 +230,7 @@ export default function Referral() {
   const handleCopyCode = useCallback(async () => {
     if (!referralData) return;
     await Clipboard.setStringAsync(referralData.code);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    hapticNotification(Haptics.NotificationFeedbackType.Success);
     track('referral_code_copied');
     setCopied(true);
     cardBg.value = withSequence(withTiming(1, { duration: 150 }), withTiming(0, { duration: 1200 }));
@@ -238,7 +239,7 @@ export default function Referral() {
 
   const handleNativeShare = useCallback(async () => {
     if (!referralData) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     track('referral_shared', { method: 'native_share' });
     await Share.share({
       message: generateShareMessage(referralData.code),

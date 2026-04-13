@@ -72,6 +72,27 @@ export const Shadow = {
   }),
 } as const;
 
+// ─── Web-safe shadow helpers ──────────────────────────────────────────────────
+// Use these instead of raw shadow* props so web doesn't throw deprecation warnings.
+export const shadows = {
+  sm: Platform.select({
+    web: { boxShadow: '0 2px 8px rgba(0,0,0,0.30)' } as any,
+    default: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
+  }),
+  md: Platform.select({
+    web: { boxShadow: '0 4px 16px rgba(0,0,0,0.40)' } as any,
+    default: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 6 },
+  }),
+  electric: Platform.select({
+    web: { boxShadow: '0 0 24px rgba(76,141,255,0.25)' } as any,
+    default: { shadowColor: '#4C8DFF', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 24, elevation: 8 },
+  }),
+  glow: (color: string) => Platform.select({
+    web: { boxShadow: `0 0 20px ${color}40` } as any,
+    default: { shadowColor: color, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 6 },
+  }) ?? {},
+} as const;
+
 // ─── Hit slop helper (increases touch target without changing layout) ─────────
 export const HitSlop = {
   sm: { top: 8, right: 8, bottom: 8, left: 8 },

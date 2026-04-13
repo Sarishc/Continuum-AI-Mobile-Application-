@@ -1,979 +1,582 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
+  StyleSheet,
   Switch,
-  Alert,
-  Modal,
-  ActionSheetIOS,
-  Platform,
-  Animated as RNAnimated,
+  Share,
 } from 'react-native';
-import Animated, {
-  FadeInDown,
-  FadeInUp,
-} from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
-import Svg, { Path, Circle, G } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { useAuth } from '../../hooks/useAuth';
+import { useRouter } from 'expo-router';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import Svg, { Path, Circle } from 'react-native-svg';
+import { format } from 'date-fns';
+import { useAuthStore } from '../../store/authStore';
 import { useHealth } from '../../hooks/useHealth';
 import { useHealthStore } from '../../store/healthStore';
 import { useSubscriptionStore } from '../../store/subscriptionStore';
-import { scheduleWeeklyBrief, cancelWeeklyBrief } from '../../services/notifications';
-import { showToast } from '../../store/toastStore';
-import { Avatar } from '../../components/ui/Avatar';
-import { SectionHeader } from '../../components/ui/SectionHeader';
-import { SettingsRow } from '../../components/ui/SettingsRow';
-import { EditProfileSheet } from '../../components/ui/EditProfileSheet';
+import { useHealthKit } from '../../hooks/useHealthKit';
+import { useConsultations } from '../../hooks/useConsultations';
+import { useFamily } from '../../hooks/useFamily';
 import { Colors } from '../../constants/colors';
-import { FontFamily, FontSize } from '../../constants/typography';
-import { Spacing, BorderRadius } from '../../constants/theme';
-import type { SeverityLevel } from '../../types';
+import { FontFamily } from '../../constants/typography';
+import { formatTimeAgo } from '../../utils/formatters';
 
-// ─── Completion ring ──────────────────────────────────────────────────────────
+// ─── SVG icons ────────────────────────────────────────────────────────────────
 
-const RING_SIZE = 48;
-const RING_STROKE = 4;
-const RADIUS = (RING_SIZE - RING_STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-function CompletionRing({ percent }: { percent: number }) {
-  const dash = (percent / 100) * CIRCUMFERENCE;
+function ChevronIcon() {
   return (
-    <Svg width={RING_SIZE} height={RING_SIZE} style={{ transform: [{ rotate: '-90deg' }] }}>
-      <Circle
-        cx={RING_SIZE / 2}
-        cy={RING_SIZE / 2}
-        r={RADIUS}
-        stroke={Colors.border}
-        strokeWidth={RING_STROKE}
-        fill="none"
-      />
-      <Circle
-        cx={RING_SIZE / 2}
-        cy={RING_SIZE / 2}
-        r={RADIUS}
-        stroke={Colors.primary}
-        strokeWidth={RING_STROKE}
-        fill="none"
-        strokeDasharray={`${dash} ${CIRCUMFERENCE}`}
-        strokeLinecap="round"
-      />
-      {/* Percent text drawn outside SVG via absolute View */}
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 18L15 12L9 6" stroke={Colors.textTertiary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
 
-function CompletionWidget({ percent }: { percent: number }) {
-  return (
-    <View style={ringStyles.wrap}>
-      <CompletionRing percent={percent} />
-      <View style={ringStyles.label}>
-        <Text style={ringStyles.labelText}>{percent}%</Text>
+// ─── Settings row ─────────────────────────────────────────────────────────────
+
+interface SettingsRowProps {
+  icon: string;
+  iconBg: string;
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  rightElement?: React.ReactNode;
+  isLast?: boolean;
+}
+
+function SettingsRow({ icon, iconBg, label, value, onPress, rightElement, isLast }: SettingsRowProps) {
+  const inner = (
+    <View style={rowStyles.row}>
+      <View style={[rowStyles.iconSquare, { backgroundColor: iconBg }]}>
+        <Text style={rowStyles.icon}>{icon}</Text>
+      </View>
+      <View style={rowStyles.middle}>
+        <Text style={rowStyles.label}>{label}</Text>
+      </View>
+      <View style={rowStyles.right}>
+        {!!value && <Text style={rowStyles.value}>{value}</Text>}
+        {rightElement ?? <ChevronIcon />}
       </View>
     </View>
   );
-}
 
-const ringStyles = StyleSheet.create({
-  wrap: { width: RING_SIZE, height: RING_SIZE, position: 'relative' },
-  label: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  labelText: {
-    fontSize: 11,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.primary,
-  },
-});
-
-// ─── Profile header card ──────────────────────────────────────────────────────
-
-interface ProfileHeaderCardProps {
-  name: string;
-  email: string;
-  conditionCount: number;
-  medicationCount: number;
-  allergyCount: number;
-  memberSince: string;
-  isPro: boolean;
-  isProTrial?: boolean;
-  proTrialDaysLeft?: number;
-  onEditPress: () => void;
-}
-
-function ProfileHeaderCard({
-  name,
-  email,
-  conditionCount,
-  medicationCount,
-  allergyCount,
-  memberSince,
-  isPro,
-  isProTrial = false,
-  proTrialDaysLeft = 0,
-  onEditPress,
-}: ProfileHeaderCardProps) {
   return (
-    <Animated.View entering={FadeInDown.duration(350)} style={headerCardStyles.card}>
-      {/* Blue radial glow top-right */}
-      <View style={headerCardStyles.glowWrap} pointerEvents="none">
-        <View style={headerCardStyles.glow} />
-      </View>
-
-      {/* Identity row */}
-      <View style={headerCardStyles.identityRow}>
-        <View style={headerCardStyles.avatarWrap}>
-          <LinearGradient colors={Colors.gradientElectric} style={headerCardStyles.avatarGradient}>
-            <Text style={headerCardStyles.avatarInitials}>
-              {name
-                ? name.trim().split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()
-                : '?'}
-            </Text>
-          </LinearGradient>
-        </View>
-        <View style={headerCardStyles.identityText}>
-          <View style={headerCardStyles.nameRow}>
-            <Text style={headerCardStyles.name}>{name || '—'}</Text>
-            {isPro && (
-              <View style={headerCardStyles.proBadge}>
-                <Text style={headerCardStyles.proBadgeText}>PRO</Text>
-              </View>
-            )}
-            {!isPro && isProTrial && (
-              <View style={[headerCardStyles.proBadge, { backgroundColor: Colors.cautionGlow, borderColor: Colors.caution }]}>
-                <Text style={[headerCardStyles.proBadgeText, { color: Colors.caution }]}>
-                  PRO TRIAL · {proTrialDaysLeft}d
-                </Text>
-              </View>
-            )}
-          </View>
-          <Text style={headerCardStyles.email}>{email || '—'}</Text>
-        </View>
-      </View>
-
-      {/* Health stat pills */}
-      <View style={headerCardStyles.pillsRow}>
-        <StatPill emoji="🫀" label={`${conditionCount} Condition${conditionCount !== 1 ? 's' : ''}`} muted={conditionCount === 0} />
-        <StatPill emoji="💊" label={`${medicationCount} Medication${medicationCount !== 1 ? 's' : ''}`} muted={medicationCount === 0} />
-        <StatPill emoji="⚠️" label={`${allergyCount} Allerg${allergyCount !== 1 ? 'ies' : 'y'}`} muted={allergyCount === 0} />
-      </View>
-
-      {/* Footer row */}
-      <View style={headerCardStyles.footer}>
-        <Text style={headerCardStyles.memberSince}>Member since {memberSince}</Text>
-        <TouchableOpacity onPress={onEditPress} activeOpacity={0.75} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={headerCardStyles.editLink}>Edit Profile →</Text>
+    <>
+      {onPress ? (
+        <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+          {inner}
         </TouchableOpacity>
-      </View>
-    </Animated.View>
+      ) : (
+        inner
+      )}
+      {!isLast && <View style={rowStyles.separator} />}
+    </>
   );
 }
 
-function StatPill({ emoji, label, muted }: { emoji: string; label: string; muted: boolean }) {
-  return (
-    <View style={[headerCardStyles.pill, muted && headerCardStyles.pillMuted]}>
-      <Text style={headerCardStyles.pillEmoji}>{emoji}</Text>
-      <Text style={[headerCardStyles.pillText, muted && { color: Colors.textMuted }]}>{label}</Text>
-    </View>
-  );
-}
-
-const headerCardStyles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing[5],
-    gap: Spacing[4],
-    overflow: 'hidden',
-  },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
-  proBadge: {
-    backgroundColor: Colors.electric,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  proBadgeText: {
-    fontSize: 9,
-    fontFamily: FontFamily.displayBold,
-    color: '#FFFFFF',
-    letterSpacing: 1,
-  },
-  glowWrap: { position: 'absolute', top: -40, right: -40, width: 160, height: 160 },
-  glow: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: Colors.electricMist,
-  },
-  identityRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
-  avatarWrap: { borderRadius: 36, overflow: 'hidden', ...Platform.select({ ios: { shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12 }, android: { elevation: 6 }, default: {} }) },
-  avatarGradient: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitials: {
-    fontSize: 28,
-    fontFamily: FontFamily.displayBold,
-    color: '#FFFFFF',
-  },
-  identityText: { flex: 1, gap: 3 },
-  name: { fontSize: FontSize['2xl'], fontFamily: FontFamily.display, color: Colors.textPrimary },
-  email: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyRegular, color: Colors.textSecondary },
-  pillsRow: { flexDirection: 'row', gap: Spacing[2], flexWrap: 'wrap' },
-  pill: {
+const rowStyles = StyleSheet.create({
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    height: 52,
+    paddingHorizontal: 16,
+    gap: 12,
   },
-  pillMuted: { opacity: 0.6 },
-  pillEmoji: { fontSize: 12 },
-  pillText: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyMedium, color: Colors.textSecondary },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  memberSince: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyRegular, color: Colors.textMuted },
-  editLink: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyMedium, color: Colors.primary },
-});
-
-
-// ─── Health profile section cards ────────────────────────────────────────────
-
-function ConditionPill({ label }: { label: string }) {
-  return (
-    <View style={healthCardStyles.condPill}>
-      <Text style={healthCardStyles.condPillText}>{label}</Text>
-    </View>
-  );
-}
-
-function MedPill({ label }: { label: string }) {
-  return (
-    <View style={healthCardStyles.medPill}>
-      <Text style={healthCardStyles.medPillText}>{label}</Text>
-    </View>
-  );
-}
-
-function AllergyPill({ label }: { label: string }) {
-  return (
-    <View style={healthCardStyles.allergyPill}>
-      <Text style={healthCardStyles.allergyPillText}>{label}</Text>
-    </View>
-  );
-}
-
-interface HealthDataCardProps {
-  title: string;
-  onEdit: () => void;
-  empty: boolean;
-  emptyLabel: string;
-  addLabel: string;
-  children: React.ReactNode;
-}
-
-function HealthDataCard({ title, onEdit, empty, emptyLabel, addLabel, children }: HealthDataCardProps) {
-  return (
-    <View style={healthCardStyles.card}>
-      <View style={healthCardStyles.cardHeader}>
-        <Text style={healthCardStyles.cardTitle}>{title}</Text>
-        <TouchableOpacity onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={healthCardStyles.editBtn}>Edit</Text>
-        </TouchableOpacity>
-      </View>
-      {empty ? (
-        <View style={healthCardStyles.emptyRow}>
-          <Text style={healthCardStyles.emptyText}>{emptyLabel}</Text>
-          <TouchableOpacity onPress={onEdit}>
-            <Text style={healthCardStyles.addLink}>{addLabel}</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={healthCardStyles.pillsWrap}>{children}</View>
-      )}
-    </View>
-  );
-}
-
-const healthCardStyles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing[4],
-    gap: Spacing[3],
-  },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { fontSize: FontSize.md, fontFamily: FontFamily.bodySemiBold, color: Colors.textPrimary },
-  editBtn: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyMedium, color: Colors.primary },
-  emptyRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
-  emptyText: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyRegular, color: Colors.textMuted, fontStyle: 'italic' },
-  addLink: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyMedium, color: Colors.primary },
-  pillsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2] },
-  condPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.electricMist,
-    borderWidth: 1,
-    borderColor: 'rgba(56,139,253,0.3)',
-  },
-  condPillText: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyMedium, color: Colors.primary },
-  medPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-    backgroundColor: 'rgba(63,185,80,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(63,185,80,0.3)',
-  },
-  medPillText: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyMedium, color: Colors.accent },
-  allergyPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-    backgroundColor: 'rgba(210,153,34,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(210,153,34,0.3)',
-  },
-  allergyPillText: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyMedium, color: Colors.warning },
-});
-
-// ─── Modals ───────────────────────────────────────────────────────────────────
-
-interface CenteredModalProps {
-  visible: boolean;
-  onClose: () => void;
-  children: React.ReactNode;
-}
-
-function CenteredModal({ visible, onClose, children }: CenteredModalProps) {
-  return (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      <TouchableOpacity style={modalStyles.overlay} activeOpacity={1} onPress={onClose} />
-      <View style={modalStyles.centeredView} pointerEvents="box-none">
-        <View style={modalStyles.card}>
-          <TouchableOpacity style={modalStyles.closeBtn} onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={modalStyles.closeBtnText}>×</Text>
-          </TouchableOpacity>
-          {children}
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const modalStyles = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.7)' },
-  centeredView: {
-    flex: 1,
+  iconSquare: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: Spacing[6],
+    flexShrink: 0,
+  },
+  icon: {
+    fontSize: 14,
+  },
+  middle: {
+    flex: 1,
+  },
+  label: {
+    fontSize: 17,
+    fontWeight: '400',
+    color: Colors.textPrimary,
+  },
+  right: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  value: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.35)',
+    maxWidth: 160,
+    textAlign: 'right',
+  },
+  separator: {
+    height: 0.5,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    marginLeft: 52,
+  },
+});
+
+// ─── Settings section ─────────────────────────────────────────────────────────
+
+interface SettingsSectionProps {
+  title: string;
+  rows: Omit<SettingsRowProps, 'isLast'>[];
+}
+
+function SettingsSection({ title, rows }: SettingsSectionProps) {
+  return (
+    <View>
+      <Text style={sectionStyles.label}>{title.toUpperCase()}</Text>
+      <View style={sectionStyles.card}>
+        {rows.map((row, i) => (
+          <SettingsRow key={row.label} {...row} isLast={i === rows.length - 1} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const sectionStyles = StyleSheet.create({
+  label: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.35)',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    paddingHorizontal: 24,
+    paddingBottom: 8,
+    paddingTop: 4,
   },
   card: {
-    width: '100%',
-    maxWidth: 320,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing[6],
-    gap: Spacing[3],
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: 12,
-    right: 16,
-  },
-  closeBtnText: {
-    fontSize: 24,
-    color: Colors.textSecondary,
-    lineHeight: 28,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 16,
+    marginHorizontal: 20,
+    overflow: 'hidden',
   },
 });
 
-function PrivacyModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+// ─── Health stat pill ─────────────────────────────────────────────────────────
+
+function HealthStatPill({ num, label }: { num: string; label: string }) {
   return (
-    <CenteredModal visible={visible} onClose={onClose}>
-      <Text style={modalTextStyles.title}>Privacy & Security</Text>
-      <Text style={modalTextStyles.body}>
-        Your health data is stored securely and never shared with third parties without your explicit consent.
-      </Text>
-      <Text style={modalTextStyles.body}>
-        All AI analysis is performed using encrypted connections. Your data is end-to-end encrypted at rest and in transit.
-      </Text>
-      <Text style={modalTextStyles.body}>
-        You can export or delete your data at any time from this screen.
-      </Text>
-    </CenteredModal>
+    <View style={pillStyles.pill}>
+      <Text style={pillStyles.num}>{num}</Text>
+      <Text style={pillStyles.label}>{label}</Text>
+    </View>
   );
 }
 
-function AboutModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  return (
-    <CenteredModal visible={visible} onClose={onClose}>
-      <View style={aboutStyles.logoWrap}>
-        <LinearGradient colors={Colors.gradientElectric} style={aboutStyles.logo}>
-          <Text style={aboutStyles.logoText}>C</Text>
-        </LinearGradient>
-      </View>
-      <Text style={aboutStyles.appName}>Continuum AI</Text>
-      <Text style={aboutStyles.version}>Version 1.0.0</Text>
-      <Text style={aboutStyles.tagline}>Built to help you understand your health.</Text>
-      <Text style={aboutStyles.copyright}>© 2026 Continuum Health, Inc.</Text>
-    </CenteredModal>
-  );
-}
-
-const modalTextStyles = StyleSheet.create({
-  title: { fontSize: FontSize.lg, fontFamily: FontFamily.display, color: Colors.textPrimary, marginTop: Spacing[2] },
-  body: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyRegular, color: Colors.textSecondary, lineHeight: 21 },
+const pillStyles = StyleSheet.create({
+  pill: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  num: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  label: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.35)',
+    textTransform: 'uppercase',
+    letterSpacing: 1.0,
+  },
 });
 
-const aboutStyles = StyleSheet.create({
-  logoWrap: { alignItems: 'center', marginTop: Spacing[2] },
-  logo: { width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  logoText: { fontSize: 32, fontFamily: FontFamily.display, color: '#FFFFFF' },
-  appName: { fontSize: FontSize['2xl'], fontFamily: FontFamily.display, color: Colors.textPrimary, textAlign: 'center' },
-  version: { fontSize: FontSize.sm, fontFamily: FontFamily.bodyRegular, color: Colors.textMuted, textAlign: 'center' },
-  tagline: { fontSize: FontSize.md, fontFamily: FontFamily.bodyRegular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
-  copyright: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyRegular, color: Colors.textMuted, textAlign: 'center' },
-});
-
-
-// ─── Main screen ──────────────────────────────────────────────────────────────
+// ─── Profile Screen ───────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
-  const { healthProfile, timeline, engineMode, setEngineMode } = useHealthStore();
-  const { isPro, isProTrial, proTrialDaysLeft, effectivelyPro } = useSubscriptionStore();
-  const { refetchAll } = useHealth();
+  const router = useRouter();
+  const { user, logout } = useAuthStore();
+  const { healthProfile, timeline, healthScore } = useHealth();
+  const { isPro } = useSubscriptionStore();
+  const { isAvailable, hasPermission, isSyncing, lastSyncTime, syncHealthData, requestPermission } = useHealthKit();
+  const { consultations } = useConsultations();
+  const { familyGroup } = useFamily();
+  const completedConsultations = consultations.filter((c) => c.status === 'completed');
+  const [notifHealthAlerts, setNotifHealthAlerts] = React.useState(true);
+  const [notifWeeklyBrief, setNotifWeeklyBrief] = React.useState(true);
 
-  const [editOpen, setEditOpen] = useState(false);
-  const [privacyOpen, setPrivacyOpen] = useState(false);
-  const [aboutOpen, setAboutOpen] = useState(false);
-  const [devModeUnlocked, setDevModeUnlocked] = useState(false);
-  const [aboutTapCount, setAboutTapCount] = useState(0);
-  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tabBarH = 49 + Math.max(insets.bottom, 0);
 
-  const handleAboutTap = () => {
-    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
-    const newCount = aboutTapCount + 1;
-    setAboutTapCount(newCount);
-    if (newCount >= 7) {
-      setDevModeUnlocked(true);
-      setAboutTapCount(0);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast('Developer mode unlocked 🔓', 'success');
-    } else {
-      tapTimeoutRef.current = setTimeout(() => setAboutTapCount(0), 2000);
-    }
+  const firstName = user?.name?.split(' ')[0] ?? 'User';
+  const initials = (user?.name ?? 'U')
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
+
+  const memberSince = user?.createdAt
+    ? format(new Date(user.createdAt), 'MMMM yyyy')
+    : 'Recently';
+
+  // Days since first entry for share progress text
+  const daysSinceStart = useMemo(() => {
+    if (!user?.createdAt) return 0;
+    const diff = Date.now() - new Date(user.createdAt).getTime();
+    return Math.max(1, Math.floor(diff / (1000 * 60 * 60 * 24)));
+  }, [user?.createdAt]);
+
+  const conditions = healthProfile?.conditions ?? [];
+  const medications = healthProfile?.medications ?? [];
+  const allergies = healthProfile?.allergies ?? [];
+
+  const conditionsStr = conditions.slice(0, 2).join(', ') || '—';
+  const medsStr = medications.length > 0 ? `${medications.length} medication${medications.length > 1 ? 's' : ''}` : '—';
+  const allergiesStr = allergies.slice(0, 2).join(', ') || '—';
+  const ageStr = healthProfile?.age ? String(healthProfile.age) : '—';
+  const sexStr = healthProfile?.sex ?? '—';
+
+  const handleSignOut = async () => {
+    await logout();
+    // Clear health store local state
+    useHealthStore.getState().reset();
+    router.replace('/(auth)/login');
   };
 
-  // Notification toggles (local state)
-  const [notifHealthAlerts, setNotifHealthAlerts] = useState(true);
-  const [notifWeeklySummary, setNotifWeeklySummary] = useState(true);
-  const [notifMedReminders, setNotifMedReminders] = useState(false);
-  const [notifDoctorFollowups, setNotifDoctorFollowups] = useState(true);
-
-  const handleToggle = useCallback((setter: (v: boolean) => void, value: boolean) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setter(!value);
-  }, []);
-
-  const handleWeeklyToggle = useCallback(async (value: boolean) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setNotifWeeklySummary(value);
-    if (value) {
-      await scheduleWeeklyBrief();
-      showToast('Weekly briefs scheduled for Sunday mornings', 'success');
-    } else {
-      await cancelWeeklyBrief();
-      showToast('Weekly briefs cancelled', 'info');
-    }
-  }, []);
-
-  const profile = healthProfile;
-  const conditions = profile?.conditions ?? [];
-  const medications = profile?.medications ?? [];
-  const allergies = profile?.allergies ?? [];
-
-  // Completion % calculation
-  const completionPct = (() => {
-    let pct = 0;
-    if (user?.name) pct += 25;
-    if (conditions.length > 0) pct += 25;
-    if (medications.length > 0) pct += 25;
-    if (timeline.length >= 2) pct += 25;
-    return pct;
-  })();
-  const showCompletionBanner = completionPct < 100;
-
-  // Member since from user.createdAt or fallback
-  const memberSince = (() => {
+  const handleShareProgress = async () => {
+    const entryCount = timeline?.length ?? 0;
+    const score = healthScore ?? 0;
+    const message = `I've been tracking my health with Continuum AI for ${daysSinceStart} day${daysSinceStart !== 1 ? 's' : ''}.\nHealth score: ${score > 0 ? `${score}/100` : 'building...'} · ${entryCount} health ${entryCount === 1 ? 'entry' : 'entries'} logged.\nGet personalized health insights: continuum-health.app`;
     try {
-      const d = new Date((user as any)?.createdAt ?? Date.now());
-      return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    } catch {
-      return 'April 2026';
-    }
-  })();
-
-  const handleSignOut = useCallback(() => {
-    Alert.alert(
-      'Sign out?',
-      "You'll need to sign in again to access your health data.",
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
-      ]
-    );
-  }, [logout]);
-
-  const handleEngineMode = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: 'Default AI Engine',
-          options: ['AI Mode', 'Rule Engine', 'Cancel'],
-          cancelButtonIndex: 2,
-        },
-        (idx) => {
-          if (idx === 0) setEngineMode('ai');
-          if (idx === 1) setEngineMode('rule');
-        }
-      );
-    } else {
-      Alert.alert('Default AI Engine', 'Select engine', [
-        { text: 'AI Mode', onPress: () => setEngineMode('ai') },
-        { text: 'Rule Engine', onPress: () => setEngineMode('rule') },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
-  }, [setEngineMode]);
-
-  const handleExport = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: 'Export Health Data',
-          options: ['Export as PDF', 'Export as JSON', 'Cancel'],
-          cancelButtonIndex: 2,
-        },
-        (idx) => {
-          if (idx === 0 || idx === 1) {
-            Alert.alert('Coming Soon', 'Export feature coming soon.');
-          }
-        }
-      );
-    } else {
-      Alert.alert('Export Health Data', 'Select format', [
-        { text: 'Export as PDF', onPress: () => Alert.alert('Coming Soon', 'Export feature coming soon.') },
-        { text: 'Export as JSON', onPress: () => Alert.alert('Coming Soon', 'Export feature coming soon.') },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
-  }, []);
-
-  const engineLabel = engineMode === 'ai' ? 'AI Mode' : 'Rule Engine';
+      await Share.share({ message });
+    } catch { /* ignore */ }
+  };
 
   return (
-    <View style={[profileStyles.root, { paddingTop: insets.top + 16 }]}>
+    <View style={[styles.root, { backgroundColor: Colors.background }]}>
       <ScrollView
-        contentContainerStyle={[profileStyles.scroll, { paddingBottom: insets.bottom + 110 }]}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16, paddingBottom: tabBarH + 24 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Header ──────────────────────────────────────────── */}
-        <View style={profileStyles.pageHeader}>
-          <Text style={profileStyles.pageTitle}>Profile</Text>
-        </View>
+        {/* Header */}
+        <Animated.View entering={FadeInDown.duration(280)} style={styles.header}>
+          <Text style={styles.title}>Profile</Text>
+        </Animated.View>
 
-        {/* ── Profile header card ──────────────────────────────── */}
-        <ProfileHeaderCard
-          name={user?.name ?? ''}
-          email={user?.email ?? ''}
-          conditionCount={conditions.length}
-          medicationCount={medications.length}
-          allergyCount={allergies.length}
-          memberSince={memberSince}
-          isPro={isPro}
-          isProTrial={isProTrial}
-          proTrialDaysLeft={proTrialDaysLeft()}
-          onEditPress={() => setEditOpen(true)}
-        />
+        {/* Profile hero card */}
+        <Animated.View entering={FadeInDown.delay(60).duration(280)} style={styles.heroCard}>
+          {/* Avatar + name row */}
+          <View style={styles.heroRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </View>
+            <View style={styles.heroText}>
+              <Text style={styles.heroName}>{user?.name ?? 'Alex Johnson'}</Text>
+              <Text style={styles.heroEmail}>{user?.email ?? 'alex@example.com'}</Text>
+              <Text style={styles.heroMember}>Member since {memberSince}</Text>
+            </View>
+          </View>
 
-        {/* ── Upgrade prompt (free users only) ─────────────────── */}
-        {!effectivelyPro() && (
-          <Animated.View entering={FadeInUp.delay(60).duration(320)}>
-            <TouchableOpacity
-              onPress={() => router.push('/paywall' as any)}
-              activeOpacity={0.88}
-              style={profileStyles.upgradeCard}
-            >
-              <View style={profileStyles.upgradeLeft}>
-                <Text style={profileStyles.upgradeIcon}>⚡</Text>
-                <View>
-                  <Text style={profileStyles.upgradeTitle}>Upgrade to Pro</Text>
-                  <Text style={profileStyles.upgradeSub}>
-                    Unlock unlimited entries and AI mode
+          {/* Thin separator */}
+          <View style={styles.heroSep} />
+
+          {/* 3 health stats */}
+          <View style={styles.statsRow}>
+            <HealthStatPill num={String(conditions.length)} label="Conditions" />
+            <View style={styles.statDivider} />
+            <HealthStatPill num={String(medications.length)} label="Medications" />
+            <View style={styles.statDivider} />
+            <HealthStatPill num={String(allergies.length)} label="Allergies" />
+          </View>
+        </Animated.View>
+
+        <View style={styles.gap} />
+
+        {/* Health summary */}
+        <Animated.View entering={FadeInDown.delay(100).duration(280)}>
+          <SettingsSection
+            title="Health Details"
+            rows={[
+              { icon: '🩺', iconBg: '#2563EB20', label: 'Conditions', value: conditionsStr, onPress: () => {} },
+              { icon: '💊', iconBg: '#BF5AF220', label: 'Medications', value: medsStr, onPress: () => {} },
+              { icon: '⚠️', iconBg: '#FF9F0A20', label: 'Allergies', value: allergiesStr, onPress: () => {} },
+              { icon: '📅', iconBg: '#30D15820', label: 'Age', value: ageStr, onPress: () => {} },
+              { icon: '👤', iconBg: '#4C8DFF20', label: 'Biological Sex', value: sexStr, onPress: () => {} },
+            ]}
+          />
+        </Animated.View>
+
+        <View style={styles.gap} />
+
+        {/* Family */}
+        <Animated.View entering={FadeInDown.delay(135).duration(280)}>
+          <SettingsSection
+            title="Family"
+            rows={[
+              {
+                icon: '👨‍👩‍👧‍👦',
+                iconBg: '#4C8DFF20',
+                label: familyGroup ? familyGroup.name : 'Family Health Plan',
+                value: familyGroup
+                  ? `${familyGroup.members.filter((m) => m.status === 'active').length} members`
+                  : 'Monitor your family\'s health together',
+                onPress: () => router.push('/family' as any),
+                rightElement: familyGroup ? (
+                  <Text style={{ fontSize: 13, color: '#4C8DFF' }}>Manage →</Text>
+                ) : (
+                  <Text style={{ fontSize: 13, color: '#30D158', fontWeight: '500' }}>$29.99/mo</Text>
+                ),
+              },
+            ]}
+          />
+        </Animated.View>
+
+        <View style={styles.gap} />
+
+        {/* Notifications */}
+        <Animated.View entering={FadeInDown.delay(140).duration(280)}>
+          <SettingsSection
+            title="Notifications"
+            rows={[
+              {
+                icon: '🔔',
+                iconBg: '#FF453A20',
+                label: 'Health Alerts',
+                rightElement: (
+                  <Switch
+                    value={notifHealthAlerts}
+                    onValueChange={setNotifHealthAlerts}
+                    trackColor={{ false: Colors.elevated, true: Colors.primary }}
+                    thumbColor="#FFFFFF"
+                  />
+                ),
+              },
+              {
+                icon: '📊',
+                iconBg: '#BF5AF220',
+                label: 'Weekly Brief',
+                rightElement: (
+                  <Switch
+                    value={notifWeeklyBrief}
+                    onValueChange={setNotifWeeklyBrief}
+                    trackColor={{ false: Colors.elevated, true: Colors.primary }}
+                    thumbColor="#FFFFFF"
+                  />
+                ),
+              },
+            ]}
+          />
+        </Animated.View>
+
+        <View style={styles.gap} />
+
+        {/* Consultations */}
+        {completedConsultations.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(155).duration(280)}>
+            <Text style={sectionStyles.label}>CONSULTATIONS</Text>
+            <View style={sectionStyles.card}>
+              {completedConsultations.slice(0, 3).map((c, i) => (
+                <View key={c.id} style={{
+                  padding: 16,
+                  borderBottomWidth: i < Math.min(completedConsultations.length, 3) - 1 ? 0.5 : 0,
+                  borderBottomColor: 'rgba(255,255,255,0.07)',
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <Text style={{ fontSize: 20 }}>👩‍⚕️</Text>
+                    <Text style={{ flex: 1, fontSize: 14, fontWeight: '500', color: '#FFFFFF' }}>
+                      {c.doctorResponse?.doctorName ?? 'Dr. Sarah Chen, MD'}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.30)' }}>
+                      {formatTimeAgo(c.createdAt)}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 18 }} numberOfLines={2}>
+                    {c.insightText}
                   </Text>
                 </View>
-              </View>
-              <Text style={profileStyles.upgradeArrow}>See Plans →</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
-        {/* ── Completion banner ─────────────────────────────────── */}
-        {showCompletionBanner && (
-          <Animated.View entering={FadeInUp.delay(120).duration(320)} style={profileStyles.completionBanner}>
-            <View style={profileStyles.completionLeft}>
-              <CompletionWidget percent={completionPct} />
-            </View>
-            <View style={profileStyles.completionRight}>
-              <Text style={profileStyles.completionTitle}>Complete your health profile</Text>
-              <Text style={profileStyles.completionSub}>Get more accurate insights by adding your health data</Text>
-              <TouchableOpacity onPress={() => setEditOpen(true)}>
-                <Text style={profileStyles.completionLink}>Continue setup →</Text>
-              </TouchableOpacity>
+              ))}
             </View>
           </Animated.View>
         )}
 
-        {/* ── Health Profile section ───────────────────────────── */}
-        <Animated.View entering={FadeInUp.delay(160).duration(320)} style={profileStyles.section}>
-          <SectionHeader title="Health Profile" />
+        <View style={styles.gap} />
 
-          <HealthDataCard
-            title="Conditions"
-            onEdit={() => setEditOpen(true)}
-            empty={conditions.length === 0}
-            emptyLabel="No conditions added"
-            addLabel="+ Add condition"
-          >
-            {conditions.map((c) => <ConditionPill key={c} label={c} />)}
-          </HealthDataCard>
-
-          <HealthDataCard
-            title="Medications"
-            onEdit={() => setEditOpen(true)}
-            empty={medications.length === 0}
-            emptyLabel="No medications added"
-            addLabel="+ Add medication"
-          >
-            {medications.map((m) => (
-              <MedPill key={m.id} label={`${m.name} ${m.dosage}`.trim()} />
-            ))}
-          </HealthDataCard>
-
-          <HealthDataCard
-            title="Allergies"
-            onEdit={() => setEditOpen(true)}
-            empty={allergies.length === 0}
-            emptyLabel="No allergies recorded"
-            addLabel="+ Add allergy"
-          >
-            {allergies.map((a) => <AllergyPill key={a} label={a} />)}
-          </HealthDataCard>
-        </Animated.View>
-
-        {/* ── Notifications section ────────────────────────────── */}
-        <Animated.View entering={FadeInUp.delay(220).duration(320)} style={profileStyles.section}>
-          <SectionHeader title="Notifications" />
-          <View style={profileStyles.card}>
-            <SettingsRow
-              icon="🔔"
-              label="Health Alerts"
-              sublabel="Critical and high severity insights"
-              rightElement={
-                <Switch
-                  value={notifHealthAlerts}
-                  onValueChange={() => handleToggle(setNotifHealthAlerts, notifHealthAlerts)}
-                  trackColor={{ false: Colors.border, true: Colors.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              }
-              showChevron={false}
-            />
-            <SettingsRow
-              icon="📊"
-              label="Weekly Summary"
-              sublabel="Your health trends every Sunday"
-              rightElement={
-                <Switch
-                  value={notifWeeklySummary}
-                  onValueChange={(v) => handleWeeklyToggle(v)}
-                  trackColor={{ false: Colors.border, true: Colors.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              }
-              showChevron={false}
-            />
-            <SettingsRow
-              icon="💊"
-              label="Medication Reminders"
-              sublabel="Daily reminders for your medications"
-              rightElement={
-                <Switch
-                  value={notifMedReminders}
-                  onValueChange={() => handleToggle(setNotifMedReminders, notifMedReminders)}
-                  trackColor={{ false: Colors.border, true: Colors.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              }
-              showChevron={false}
-            />
-            <SettingsRow
-              icon="🩺"
-              label="Doctor Follow-ups"
-              sublabel="Reminders for recommended appointments"
-              rightElement={
-                <Switch
-                  value={notifDoctorFollowups}
-                  onValueChange={() => handleToggle(setNotifDoctorFollowups, notifDoctorFollowups)}
-                  trackColor={{ false: Colors.border, true: Colors.primary }}
-                  thumbColor="#FFFFFF"
-                />
-              }
-              showChevron={false}
-              showDivider={false}
-            />
-          </View>
-        </Animated.View>
-
-        {/* ── Preferences section ──────────────────────────────── */}
-        <Animated.View entering={FadeInUp.delay(280).duration(320)} style={profileStyles.section}>
-          <SectionHeader title="Preferences" />
-          <View style={profileStyles.card}>
-            <SettingsRow
-              icon="⚡"
-              label="Subscription"
-              sublabel={isPro ? 'Continuum Pro' : 'Free Plan'}
-              onPress={() => router.push('/paywall' as any)}
-              rightElement={
-                isPro ? (
-                  <View style={profileStyles.activeProBadge}>
-                    <Text style={profileStyles.activeProText}>Active ✓</Text>
-                  </View>
-                ) : (
-                  <Text style={profileStyles.upgradeLink}>Upgrade →</Text>
-                )
-              }
-            />
-            <SettingsRow
-              icon="🧠"
-              label="Default Engine"
-              sublabel="Used for new conversations"
-              onPress={handleEngineMode}
-              rightElement={
-                <View style={profileStyles.rowValueWrap}>
-                  <Text style={profileStyles.rowValue}>{engineLabel}</Text>
-                </View>
-              }
-            />
-            <SettingsRow
-              icon="📤"
-              label="Export Health Data"
-              sublabel="Download all your health records"
-              onPress={handleExport}
-            />
-            <SettingsRow
-              icon="📊"
-              label="Health Report Card"
-              sublabel="Generate and share your progress"
-              onPress={() => router.push('/report-card')}
-            />
-            <SettingsRow
-              icon="🔒"
-              label="Privacy & Security"
-              sublabel="Data storage and usage"
-              onPress={() => setPrivacyOpen(true)}
-            />
-            <SettingsRow
-              icon="ℹ️"
-              label="About Continuum"
-              sublabel="Version 1.0.0"
-              onPress={handleAboutTap}
-              showDivider={!devModeUnlocked}
-            />
-            {devModeUnlocked && (
+        {/* Integrations — Apple Health (iOS only) */}
+        {isAvailable && (
+          <Animated.View entering={FadeInDown.delay(160).duration(280)}>
+            <Text style={sectionStyles.label}>INTEGRATIONS</Text>
+            <View style={sectionStyles.card}>
               <SettingsRow
-                icon="📊"
-                label="Analytics Dashboard"
-                sublabel="Internal metrics · dev only"
-                onPress={() => router.push('/analytics')}
-                showDivider={false}
+                icon="❤️"
+                iconBg="rgba(255,45,85,0.12)"
+                label="Apple Health"
+                value={
+                  hasPermission
+                    ? isSyncing
+                      ? 'Syncing...'
+                      : lastSyncTime
+                        ? `Synced ${formatTimeAgo(lastSyncTime)}`
+                        : 'Connected'
+                    : 'Not connected'
+                }
+                onPress={hasPermission ? syncHealthData : requestPermission}
+                rightElement={
+                  <Text style={{
+                    fontSize: 13,
+                    fontWeight: '600',
+                    color: hasPermission ? '#30D158' : '#4C8DFF',
+                  }}>
+                    {hasPermission ? 'Connected ✓' : 'Connect'}
+                  </Text>
+                }
+                isLast
               />
-            )}
+            </View>
+          </Animated.View>
+        )}
+
+        <View style={styles.gap} />
+
+        {/* Account */}
+        <Animated.View entering={FadeInDown.delay(180).duration(280)}>
+          <SettingsSection
+            title="Account"
+            rows={[
+              { icon: '⭐', iconBg: '#FFD60A20', label: isPro ? 'Pro Plan' : 'Upgrade to Pro', value: isPro ? 'Active' : '', onPress: () => router.push('/paywall' as any) },
+              { icon: '📤', iconBg: '#30D15820', label: 'Share Progress', onPress: handleShareProgress },
+              { icon: '🎁', iconBg: '#30D15820', label: 'Invite Friends', onPress: () => router.push('/referral' as any) },
+              { icon: '📋', iconBg: '#4C8DFF20', label: 'Weekly Brief', onPress: () => router.push('/weekly-brief' as any) },
+              { icon: '📄', iconBg: '#FF9F0A20', label: 'Report Card', onPress: () => router.push('/report-card' as any) },
+            ]}
+          />
+        </Animated.View>
+
+        <View style={styles.gap} />
+
+        {/* Sign out */}
+        <Animated.View entering={FadeInDown.delay(220).duration(280)}>
+          <View style={styles.signOutCard}>
+            <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn} activeOpacity={0.75}>
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </TouchableOpacity>
           </View>
         </Animated.View>
 
-        {/* ── Account section ──────────────────────────────────── */}
-        <Animated.View entering={FadeInUp.delay(340).duration(320)} style={profileStyles.section}>
-          <SectionHeader title="Account" />
-          <View style={profileStyles.card}>
-            <SettingsRow
-              icon="🎁"
-              label="Invite Friends"
-              sublabel="Give 7 days Pro · Get 7 days Pro"
-              onPress={() => router.push('/referral')}
-            />
-            <SettingsRow
-              icon="👤"
-              label="Account Settings"
-              sublabel={user?.email}
-              onPress={() => setEditOpen(true)}
-            />
-            <SettingsRow
-              icon="🔴"
-              label="Sign Out"
-              onPress={handleSignOut}
-              labelColor={Colors.critical}
-              showChevron={false}
-              showDivider={false}
-            />
-          </View>
-        </Animated.View>
+        <View style={{ height: 16 }} />
+
+        <Text style={styles.version}>Continuum AI v1.0.0</Text>
       </ScrollView>
-
-      {/* ── Sheets + modals ─────────────────────────────────────── */}
-      <EditProfileSheet visible={editOpen} onClose={() => setEditOpen(false)} />
-      <PrivacyModal visible={privacyOpen} onClose={() => setPrivacyOpen(false)} />
-      <AboutModal visible={aboutOpen} onClose={() => setAboutOpen(false)} />
     </View>
   );
 }
 
-const profileStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   scroll: {
-    paddingHorizontal: Spacing[4],
-    gap: Spacing[5],
-    paddingTop: Spacing[4],
+    gap: 0,
   },
-  pageHeader: { paddingBottom: Spacing[1] },
-  pageTitle: {
-    fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.displayBold,
+  header: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  title: {
+    fontSize: 34,
+    fontFamily: FontFamily.bodyBold,
+    fontWeight: '700',
     color: Colors.textPrimary,
+    letterSpacing: -0.5,
   },
-  // Upgrade card (free users)
-  upgradeCard: {
+  heroCard: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 20,
+    marginHorizontal: 20,
+    padding: 20,
+    gap: 16,
+  },
+  heroRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.electricMist,
+    gap: 14,
+  },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(76,141,255,0.15)',
     borderWidth: 1,
-    borderColor: Colors.electric,
-    borderRadius: 12,
-    paddingHorizontal: Spacing[4],
-    paddingVertical: 14,
+    borderColor: 'rgba(76,141,255,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-  upgradeLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing[3] },
-  upgradeIcon: { fontSize: 20 },
-  upgradeTitle: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.displaySemiBold,
-    color: Colors.electric,
+  avatarText: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#4C8DFF',
   },
-  upgradeSub: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    marginTop: 1,
+  heroText: {
+    flex: 1,
+    gap: 3,
   },
-  upgradeArrow: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.electric,
+  heroName: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
-  // Subscription row badges
-  activeProBadge: {
-    backgroundColor: Colors.positiveGlow,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
+  heroEmail: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.45)',
   },
-  activeProText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.positive,
+  heroMember: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.25)',
   },
-  upgradeLink: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.electric,
+  heroSep: {
+    height: 0.5,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  section: { gap: Spacing[3] },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  statDivider: {
+    width: 0.5,
+    height: 32,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  gap: {
+    height: 24,
+  },
+  signOutCard: {
+    marginHorizontal: 20,
+    backgroundColor: 'rgba(255,69,58,0.08)',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(255,69,58,0.20)',
+    borderRadius: 20,
     overflow: 'hidden',
   },
-
-  // Completion banner
-  completionBanner: {
-    flexDirection: 'row',
+  signOutBtn: {
+    height: 56,
     alignItems: 'center',
-    gap: Spacing[4],
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
-    padding: Spacing[4],
+    justifyContent: 'center',
   },
-  completionLeft: { alignItems: 'center', justifyContent: 'center' },
-  completionRight: { flex: 1, gap: 4 },
-  completionTitle: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textPrimary,
-  },
-  completionSub: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-    lineHeight: 19,
-  },
-  completionLink: {
-    fontSize: FontSize.sm,
+  signOutText: {
+    fontSize: 17,
     fontFamily: FontFamily.bodyMedium,
-    color: Colors.primary,
-    marginTop: 2,
+    fontWeight: '500',
+    color: Colors.critical,
   },
-
-  // Preferences row value
-  rowValueWrap: { marginRight: Spacing[2] },
-  rowValue: {
-    fontSize: FontSize.sm,
+  version: {
+    fontSize: 12,
     fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
+    color: Colors.textTertiary,
+    textAlign: 'center',
   },
 });
-

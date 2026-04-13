@@ -21,30 +21,13 @@ const DISCLAIMER =
 export function mockAIResponse(question: string): AIAskResponse {
   const q = question.toLowerCase();
 
-  if (/blood|glucose|hba1c|sugar|diabet/.test(q)) {
+  // Check blood PRESSURE first — "blood pressure" contains "blood" so this must come before the glucose check.
+  if (/blood pressure|systolic|diastolic|mmhg|hypertension|pressure|cardio|heart|chest|\bbp\b/.test(q)) {
     return {
       answer:
-        'Your recent HbA1c of 6.8% places you in the pre-diabetic range. This warrants attention but is very manageable with targeted lifestyle changes — reducing refined carbohydrates, increasing physical activity, and consistent monitoring.',
+        'Based on your logged readings, your blood pressure shows a pattern consistent with Stage 1 hypertension (consistently above 130/80 mmHg). Your most recent reading of 138/88 mmHg exceeds the AHA Stage 1 threshold. This should be monitored closely and may require a medication timing adjustment.',
       reasoning:
-        'HbA1c between 5.7–6.4% is considered pre-diabetic by ADA guidelines. Your recorded value of 6.8% exceeds this threshold, indicating early insulin resistance. The upward trend over the past 3 months is the primary driver of this assessment.',
-      confidence: 'high',
-      confidence_score: 0.87,
-      disclaimer: DISCLAIMER,
-      specialist_recommendation: {
-        specialist_type: 'Endocrinologist',
-        reason:
-          'Worsening glycaemic control with HbA1c trending above 6.5% warrants a specialist review of your diabetes management plan.',
-        urgency: 'soon',
-      },
-    };
-  }
-
-  if (/pressure|heart|cardio|chest|bp|hypertension/.test(q)) {
-    return {
-      answer:
-        'Based on your logged readings, your blood pressure shows a pattern consistent with Stage 1 hypertension (consistently above 130/80 mmHg). This should be monitored closely and may require medication adjustment.',
-      reasoning:
-        'The AHA defines Stage 1 hypertension as systolic 130–139 mmHg or diastolic 80–89 mmHg. Your recorded readings of 142/88 mmHg exceed this threshold. The morning surge pattern detected in your data is an additional cardiovascular risk factor.',
+        'The AHA defines Stage 1 hypertension as systolic 130–139 mmHg or diastolic 80–89 mmHg. Your recorded readings of 138/88 mmHg (annual physical) and the morning surge pattern detected in your data are additional cardiovascular risk factors worth discussing with your doctor.',
       confidence: 'medium',
       confidence_score: 0.78,
       disclaimer: DISCLAIMER,
@@ -53,6 +36,25 @@ export function mockAIResponse(question: string): AIAskResponse {
         reason:
           'Persistent Stage 1 hypertension with a morning surge pattern warrants a cardiovascular risk assessment.',
         urgency: 'routine',
+      },
+    };
+  }
+
+  // Blood glucose / diabetes — must come AFTER the blood pressure check above.
+  if (/\bblood\b|glucose|hba1c|sugar|diabet|insulin/.test(q)) {
+    return {
+      answer:
+        'Your recent HbA1c of 6.8% places you in the pre-diabetic range (ADA threshold: 5.7–6.4%). This warrants attention but is very manageable with targeted lifestyle changes — reducing refined carbohydrates, increasing physical activity, and consistent monitoring.',
+      reasoning:
+        'HbA1c between 5.7–6.4% is considered pre-diabetic by ADA guidelines. Your recorded value of 6.8% exceeds this threshold, indicating early insulin resistance. The upward trend over the past 3 months (5.7% → 6.1% → 6.8%) is the primary driver of this assessment.',
+      confidence: 'high',
+      confidence_score: 0.87,
+      disclaimer: DISCLAIMER,
+      specialist_recommendation: {
+        specialist_type: 'Endocrinologist',
+        reason:
+          'Worsening glycaemic control with HbA1c trending above 6.5% warrants a specialist review of your diabetes management plan.',
+        urgency: 'soon',
       },
     };
   }
@@ -99,7 +101,23 @@ export function mockAIResponse(question: string): AIAskResponse {
 export function mockRuleResponse(question: string): AIAskResponse {
   const q = question.toLowerCase();
 
-  if (/blood|glucose|hba1c/.test(q)) {
+  // Blood pressure check BEFORE blood glucose — "blood pressure" contains "blood".
+  if (/blood pressure|pressure|hypertension|systolic|diastolic|\bbp\b|heart/.test(q)) {
+    return {
+      answer: 'RULE MATCH: BP > 130/80 → Flag: Stage 1 Hypertension. Action: Review antihypertensive medication timing with your prescribing physician.',
+      reasoning: 'Rule R-017: IF systolic >= 130 OR diastolic >= 80 THEN severity = MODERATE AND recommend Cardiologist. Triggered by recorded reading of 138/88 mmHg.',
+      confidence: 'high',
+      confidence_score: 1.0,
+      disclaimer: DISCLAIMER,
+      specialist_recommendation: {
+        specialist_type: 'Cardiologist',
+        reason: 'Triggered by rule R-017: Blood pressure threshold exceeded.',
+        urgency: 'routine',
+      },
+    };
+  }
+
+  if (/\bblood\b|glucose|hba1c|diabet|sugar/.test(q)) {
     return {
       answer: 'RULE MATCH: HbA1c > 6.5% → Flag: Pre-diabetic range. Action: Schedule endocrinology review within 6 weeks.',
       reasoning: 'Rule R-042: IF HbA1c >= 6.5 THEN severity = HIGH AND recommend Endocrinologist.',
@@ -110,21 +128,6 @@ export function mockRuleResponse(question: string): AIAskResponse {
         specialist_type: 'Endocrinologist',
         reason: 'Triggered by rule R-042: HbA1c threshold exceeded.',
         urgency: 'soon',
-      },
-    };
-  }
-
-  if (/pressure|heart|bp/.test(q)) {
-    return {
-      answer: 'RULE MATCH: BP > 130/80 → Flag: Stage 1 Hypertension. Action: Review antihypertensive medication timing.',
-      reasoning: 'Rule R-017: IF systolic >= 130 OR diastolic >= 80 THEN severity = MODERATE AND recommend Cardiologist.',
-      confidence: 'high',
-      confidence_score: 1.0,
-      disclaimer: DISCLAIMER,
-      specialist_recommendation: {
-        specialist_type: 'Cardiologist',
-        reason: 'Triggered by rule R-017: Blood pressure threshold exceeded.',
-        urgency: 'routine',
       },
     };
   }

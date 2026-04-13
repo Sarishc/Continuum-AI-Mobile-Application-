@@ -1,963 +1,716 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+} from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
+  StyleSheet,
   RefreshControl,
-  Animated as RNAnimated,
-  LayoutAnimation,
-  UIManager,
   Platform,
-  Alert,
 } from 'react-native';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
-import { router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
-import { format, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
-import { useHealthStore } from '../../store/healthStore';
+import { useRouter } from 'expo-router';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Svg, { Path, Circle } from 'react-native-svg';
+import { format, isToday, isYesterday } from 'date-fns';
 import { useHealth } from '../../hooks/useHealth';
-import { SeverityBadge } from '../../components/ui/SeverityBadge';
 import { Colors } from '../../constants/colors';
-import { FontFamily, FontSize } from '../../constants/typography';
-import { Spacing, BorderRadius } from '../../constants/theme';
-import type { HealthEntry, HealthEntryType, StructuredData } from '../../types';
+import { FontFamily } from '../../constants/typography';
+import type { FirestoreHealthEntry } from '../../services/firestoreService';
 
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type FilterType = 'all' | HealthEntryType;
-
-interface FilterChip {
-  key: FilterType;
-  label: string;
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const FILTERS: FilterChip[] = [
-  { key: 'all', label: 'All' },
-  { key: 'lab_result', label: 'Labs' },
-  { key: 'symptom', label: 'Symptoms' },
-  { key: 'appointment', label: 'Appointments' },
-  { key: 'medication', label: 'Medications' },
-  { key: 'vital', label: 'Vitals' },
-  { key: 'note', label: 'Notes' },
-];
-
-// ─── Entry type config ────────────────────────────────────────────────────────
-
-interface EntryTypeConfig {
-  color: string;
-  bg: string;
-  label: string;
-}
-
-const ENTRY_TYPE_CONFIG: Record<HealthEntryType, EntryTypeConfig> = {
-  lab_result: {
-    color: Colors.electric,
-    bg: Colors.electricMist,
-    label: 'Lab Result',
-  },
-  symptom: {
-    color: Colors.caution,
-    bg: Colors.cautionGlow,
-    label: 'Symptom',
-  },
-  appointment: {
-    color: Colors.insight,
-    bg: Colors.insightGlow,
-    label: 'Appointment',
-  },
-  medication: {
-    color: Colors.positive,
-    bg: Colors.positiveGlow,
-    label: 'Medication',
-  },
-  vital: {
-    color: Colors.caution,
-    bg: Colors.cautionGlow,
-    label: 'Vital',
-  },
-  note: {
-    color: Colors.textTertiary,
-    bg: 'rgba(92,99,132,0.12)',
-    label: 'Note',
-  },
-};
-
-// ─── Date group helpers ───────────────────────────────────────────────────────
-
-function getDateGroupLabel(dateStr: string): string {
-  const date = new Date(dateStr);
-  if (isToday(date)) return 'Today';
-  if (isYesterday(date)) return 'Yesterday';
-  if (isThisWeek(date)) return format(date, 'EEEE');
-  if (isThisMonth(date)) return format(date, 'MMMM d');
-  return format(date, 'MMMM d, yyyy');
-}
-
-interface DateGroup {
-  label: string;
-  entries: HealthEntry[];
-}
-
-function groupByDate(entries: HealthEntry[]): DateGroup[] {
-  const groups: Map<string, HealthEntry[]> = new Map();
-  for (const entry of entries) {
-    const label = getDateGroupLabel(entry.recordedAt);
-    const existing = groups.get(label) ?? [];
-    existing.push(entry);
-    groups.set(label, existing);
-  }
-  return Array.from(groups.entries()).map(([label, entries]) => ({ label, entries }));
-}
-
-// ─── Icons ────────────────────────────────────────────────────────────────────
-
-function LabIcon({ color }: { color: string }) {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M9 3H15M9 3V13L5 19H19L15 13V3M9 3H15"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function SymptomIcon({ color }: { color: string }) {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 8V12M12 16H12.01M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
-
-function AppointmentIcon({ color }: { color: string }) {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Rect x="3" y="4" width="18" height="18" rx="3" stroke={color} strokeWidth={1.8} />
-      <Path d="M3 9H21M8 2V6M16 2V6" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-function MedicationIcon({ color }: { color: string }) {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M10.5 6H6.5C4.567 6 3 7.567 3 9.5V14.5C3 16.433 4.567 18 6.5 18H10.5C12.433 18 14 16.433 14 14.5V9.5C14 7.567 12.433 6 10.5 6Z"
-        stroke={color}
-        strokeWidth={1.8}
-      />
-      <Path d="M3 12H14" stroke={color} strokeWidth={1.8} />
-      <Path
-        d="M17.5 6L21 9.5L17.5 13M21 9.5H14"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function VitalIcon({ color }: { color: string }) {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3 12H6L9 5L12 19L15 9L18 14H21"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function NoteIcon({ color }: { color: string }) {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15M9 5C9 5 9 3 12 3C15 3 15 5 15 5M9 5H15M9 12H15M9 16H13"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
-
-function ChevronDownIcon({ color, flipped }: { color: string; flipped: boolean }) {
-  return (
-    <Svg
-      width={16}
-      height={16}
-      viewBox="0 0 24 24"
-      fill="none"
-      style={{ transform: [{ rotate: flipped ? '180deg' : '0deg' }] }}
-    >
-      <Path d="M6 9L12 15L18 9" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-function EntryIcon({ type, color }: { type: HealthEntryType; color: string }) {
+function entryColor(type: string): string {
   switch (type) {
-    case 'lab_result':  return <LabIcon color={color} />;
-    case 'symptom':     return <SymptomIcon color={color} />;
-    case 'appointment': return <AppointmentIcon color={color} />;
-    case 'medication':  return <MedicationIcon color={color} />;
-    case 'vital':       return <VitalIcon color={color} />;
-    case 'note':        return <NoteIcon color={color} />;
-    default:            return <NoteIcon color={color} />;
+    case 'lab':   return Colors.primary;
+    case 'symptom':   return Colors.alert;
+    case 'vitals':    return Colors.vital;
+    case 'report':    return Colors.insight;
+    default:          return Colors.textTertiary;
   }
 }
 
-// ─── Structured data panel ────────────────────────────────────────────────────
-
-function StructuredDataPanel({ data }: { data: StructuredData }) {
-  return (
-    <View style={styles.structuredPanel}>
-      {data.summary ? (
-        <Text style={styles.structuredSummary}>{data.summary}</Text>
-      ) : null}
-
-      {data.lab_values && Object.keys(data.lab_values).length > 0 ? (
-        <View style={styles.structuredSection}>
-          <Text style={styles.structuredSectionLabel}>LAB VALUES</Text>
-          <View style={styles.labGrid}>
-            {Object.entries(data.lab_values).map(([key, val]) => (
-              <View key={key} style={styles.labCell}>
-                <Text style={styles.labKey}>{key}</Text>
-                <Text style={styles.labVal}>{val}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : null}
-
-      {data.conditions && data.conditions.length > 0 ? (
-        <View style={styles.structuredSection}>
-          <Text style={styles.structuredSectionLabel}>CONDITIONS</Text>
-          <View style={styles.tagRow}>
-            {data.conditions.map((c) => (
-              <View key={c} style={[styles.tag, { backgroundColor: 'rgba(56, 139, 253, 0.1)' }]}>
-                <Text style={[styles.tagText, { color: Colors.primary }]}>{c}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : null}
-
-      {data.symptoms && data.symptoms.length > 0 ? (
-        <View style={styles.structuredSection}>
-          <Text style={styles.structuredSectionLabel}>SYMPTOMS</Text>
-          <View style={styles.tagRow}>
-            {data.symptoms.map((s) => (
-              <View key={s} style={[styles.tag, { backgroundColor: 'rgba(210, 153, 34, 0.1)' }]}>
-                <Text style={[styles.tagText, { color: Colors.warning }]}>{s}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : null}
-
-      {data.medications && data.medications.length > 0 ? (
-        <View style={styles.structuredSection}>
-          <Text style={styles.structuredSectionLabel}>MEDICATIONS</Text>
-          {data.medications.map((m, i) => (
-            <View key={i} style={styles.medRow}>
-              <Text style={styles.medName}>{m.name}</Text>
-              <Text style={styles.medDetail}>{m.dosage} · {m.frequency}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-
-      {data.risk_flags && data.risk_flags.length > 0 ? (
-        <View style={styles.structuredSection}>
-          <Text style={[styles.structuredSectionLabel, { color: Colors.warning }]}>RISK FLAGS</Text>
-          {data.risk_flags.map((flag, i) => (
-            <View key={i} style={styles.riskRow}>
-              <View style={styles.riskDot} />
-              <Text style={styles.riskText}>{flag}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-
-      {data.source_file ? (
-        <View style={styles.sourceRow}>
-          <Text style={styles.sourceText}>Source: {data.source_file}</Text>
-        </View>
-      ) : null}
-    </View>
-  );
+function entryLabel(type: string): string {
+  const m: Record<string, string> = {
+    lab:     'LAB',
+    symptom: 'SYMPTOM',
+    vitals:  'VITAL',
+    report:  'REPORT',
+    note:    'NOTE',
+  };
+  return m[type] ?? type.toUpperCase();
 }
 
-// ─── Entry card ───────────────────────────────────────────────────────────────
-
-interface EntryCardProps {
-  entry: HealthEntry;
-  isLast: boolean;
+function entryIcon(type: string, color: string) {
+  switch (type) {
+    case 'lab_result':
+      return (
+        <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+          <Path d="M9 3H15M9 3V14L4.5 20.5C4 21.2 4.5 22 5.4 22H18.6C19.5 22 20 21.2 19.5 20.5L15 14V3M9 3H15" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      );
+    case 'vital':
+      return (
+        <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+          <Path d="M22 12H18L15 21L9 3L6 12H2" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      );
+    case 'medication':
+      return (
+        <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+          <Path d="M10.5 3.5L3.5 10.5C2 12 2 14.5 3.5 16L8 20.5C9.5 22 12 22 13.5 20.5L20.5 13.5C22 12 22 9.5 20.5 8L16 3.5C14.5 2 12 2 10.5 3.5Z" stroke={color} strokeWidth={1.8} />
+          <Path d="M7 12L17 12" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+        </Svg>
+      );
+    case 'symptom':
+      return (
+        <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+          <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={1.8} />
+          <Path d="M12 8V12L14 14" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+        </Svg>
+      );
+    default:
+      return (
+        <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+          <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={1.8} />
+          <Path d="M12 8V14M12 17V16.9" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+        </Svg>
+      );
+  }
 }
 
-const EntryCard = React.memo(function EntryCard({ entry, isLast }: EntryCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  const swipeRef = useRef<Swipeable>(null);
-  const typeConfig = ENTRY_TYPE_CONFIG[entry.type];
-  const hasStructured = !!entry.structuredData;
-  const deleteEntry = useHealthStore((s) => s.deleteEntry);
-  const setPendingChatContext = useHealthStore((s) => s.setPendingChatContext);
+function dateGroupLabel(date: Date): string {
+  if (isToday(date)) return 'TODAY';
+  if (isYesterday(date)) return 'YESTERDAY';
+  return format(date, 'MMMM d').toUpperCase();
+}
 
-  const toggleExpand = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpanded((v) => !v);
-  }, []);
-
-  const handleDelete = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    Alert.alert(
-      'Delete Entry',
-      'This health entry will be permanently removed.',
-      [
-        { text: 'Cancel', style: 'cancel', onPress: () => swipeRef.current?.close() },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteEntry(entry.id) },
-      ]
-    );
-  }, [entry.id, deleteEntry]);
-
-  const handleAskAI = useCallback(() => {
-    const dateStr = format(new Date(entry.recordedAt), 'MMM d, yyyy');
-    setPendingChatContext(`Tell me about my ${entry.type.replace('_', ' ')} from ${dateStr}: ${entry.title}${entry.description ? '. ' + entry.description : ''}`);
-    router.push('/(tabs)/chat' as any);
-  }, [entry, setPendingChatContext]);
-
-  const renderRightActions = useCallback(() => (
-    <TouchableOpacity
-      onPress={handleDelete}
-      style={styles.swipeDeleteBtn}
-      activeOpacity={0.85}
-    >
-      <Text style={styles.swipeDeleteIcon}>🗑️</Text>
-      <Text style={styles.swipeDeleteLabel}>DELETE</Text>
-    </TouchableOpacity>
-  ), [handleDelete]);
-
-  const timeLabel = format(new Date(entry.recordedAt), 'h:mm a');
-
-  return (
-    <View style={styles.entryRow}>
-      {/* Timeline column */}
-      <View style={styles.timelineCol}>
-        <View style={[styles.entryIconWrap, { backgroundColor: typeConfig.bg }]}>
-          <EntryIcon type={entry.type} color={typeConfig.color} />
-        </View>
-        {!isLast && <View style={styles.timelineLine} />}
-      </View>
-
-      {/* Card wrapped in Swipeable */}
-      <Swipeable
-        ref={swipeRef}
-        renderRightActions={renderRightActions}
-        onSwipeableOpen={handleDelete}
-        friction={2}
-        rightThreshold={40}
-        overshootRight={false}
-        containerStyle={styles.swipeableContainer}
-      >
-        <View style={[styles.card, expanded && styles.cardExpanded]}>
-          <TouchableOpacity
-            onPress={hasStructured ? toggleExpand : undefined}
-            activeOpacity={hasStructured ? 0.75 : 1}
-            style={styles.cardTouchable}
-          >
-            {/* Type pill + severity */}
-            <View style={styles.cardTopRow}>
-              <View style={[styles.typePill, { backgroundColor: typeConfig.bg }]}>
-                <Text style={[styles.typePillText, { color: typeConfig.color }]}>
-                  {typeConfig.label}
-                </Text>
-              </View>
-              <View style={styles.cardTopRight}>
-                {entry.severity && <SeverityBadge severity={entry.severity} />}
-                {hasStructured && (
-                  <ChevronDownIcon color={Colors.textMuted} flipped={expanded} />
-                )}
-              </View>
-            </View>
-
-            {/* Title */}
-            <Text style={styles.cardTitle}>{entry.title}</Text>
-
-            {/* Value + unit */}
-            {entry.value !== undefined ? (
-              <Text style={styles.cardValue}>
-                {entry.value}
-                {entry.unit ? <Text style={styles.cardUnit}> {entry.unit}</Text> : null}
-              </Text>
-            ) : null}
-
-            {/* Description */}
-            {entry.description ? (
-              <Text style={styles.cardDesc} numberOfLines={expanded ? undefined : 2}>
-                {entry.description}
-              </Text>
-            ) : null}
-
-            {/* Tags */}
-            {entry.tags.length > 0 ? (
-              <View style={styles.tagsRow}>
-                {entry.tags.map((tag) => (
-                  <View key={tag} style={styles.entryTag}>
-                    <Text style={styles.entryTagText}>#{tag}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-
-            {/* Time */}
-            <Text style={styles.cardTime}>{timeLabel}</Text>
-          </TouchableOpacity>
-
-          {/* Expanded structured data + Ask AI */}
-          {expanded && entry.structuredData ? (
-            <>
-              <StructuredDataPanel data={entry.structuredData} />
-              <TouchableOpacity
-                onPress={handleAskAI}
-                activeOpacity={0.8}
-                style={styles.askAIBtn}
-              >
-                <Text style={styles.askAIBtnText}>Ask AI About This →</Text>
-              </TouchableOpacity>
-            </>
-          ) : null}
-        </View>
-      </Swipeable>
-    </View>
-  );
-});
-
-// ─── Date group header ────────────────────────────────────────────────────────
-
-function DateGroupHeader({ label }: { label: string }) {
-  return (
-    <View style={styles.dateGroupRow}>
-      <View style={styles.dateGroupLine} />
-      <Text style={styles.dateGroupLabel}>{label}</Text>
-      <View style={styles.dateGroupLine} />
-    </View>
-  );
+function formatTimeAgo(date: Date): string {
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return format(date, 'h:mm a');
 }
 
 // ─── Filter chips ─────────────────────────────────────────────────────────────
 
-interface FilterChipsProps {
-  active: FilterType;
-  onChange: (f: FilterType) => void;
-}
+const FILTER_OPTIONS = [
+  { id: 'all',     label: 'All' },
+  { id: 'lab',     label: 'Labs' },
+  { id: 'vitals',  label: 'Vitals' },
+  { id: 'symptom', label: 'Symptoms' },
+  { id: 'report',  label: 'Reports' },
+  { id: 'note',    label: 'Notes' },
+];
 
-function FilterChips({ active, onChange }: FilterChipsProps) {
+// ─── Entry Card ───────────────────────────────────────────────────────────────
+
+function EntryCard({
+  entry,
+  isFirst,
+  onDelete,
+}: {
+  entry: FirestoreHealthEntry;
+  isFirst: boolean;
+  onDelete?: (id: string) => void;
+}) {
+  const router = useRouter();
+  const [expanded, setExpanded] = useState(false);
+  const color = entryColor(entry.entryType);
+
+  const handleAskAI = useCallback(() => {
+    const date = format(new Date(entry.createdAt), 'MMM d');
+    const summary = entry.structuredData?.summary ?? entry.rawText ?? '';
+    const context = `Tell me about my ${entry.title} from ${date}${summary ? ': ' + summary.slice(0, 200) : ''}`;
+    // Store pending context in healthStore
+    const { useHealthStore } = require('../../store/healthStore');
+    useHealthStore.getState().setPendingChatContext(context);
+    router.push('/(tabs)/chat' as any);
+  }, [entry, router]);
+
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.filtersContent}
-      style={styles.filtersScroll}
-    >
-      {FILTERS.map((f) => {
-        const isActive = f.key === active;
-        const typeConfig = f.key !== 'all' ? ENTRY_TYPE_CONFIG[f.key] : null;
-        return (
-          <TouchableOpacity
-            key={f.key}
-            onPress={() => onChange(f.key)}
-            activeOpacity={0.75}
-            style={[
-              styles.filterChip,
-              isActive && styles.filterChipActive,
-              isActive && typeConfig && { borderColor: typeConfig.color, backgroundColor: typeConfig.bg },
-              isActive && !typeConfig && { borderColor: Colors.primary, backgroundColor: 'rgba(56,139,253,0.1)' },
-            ]}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                isActive && typeConfig && { color: typeConfig.color },
-                isActive && !typeConfig && { color: Colors.primary },
-              ]}
-            >
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
-}
+    <View style={cardStyles.rowContainer}>
+      {/* Left track */}
+      <View style={cardStyles.track}>
+        <View style={[cardStyles.node, { backgroundColor: color }]}>
+          {isFirst && <View style={[cardStyles.nodePulse, { borderColor: color }]} />}
+        </View>
+        <View style={cardStyles.trackLine} />
+      </View>
 
-// ─── Empty state ──────────────────────────────────────────────────────────────
+      {/* Card */}
+      <TouchableOpacity
+        onPress={() => setExpanded((e) => !e)}
+        activeOpacity={0.82}
+        style={[cardStyles.card, expanded && cardStyles.cardExpanded]}
+      >
+        {/* Left icon circle */}
+        <View style={[cardStyles.iconCircle, { backgroundColor: `${color}18` }]}>
+          {entryIcon(entry.entryType, color)}
+        </View>
 
-function EmptyState({ filtered }: { filtered: boolean }) {
-  return (
-    <View style={styles.empty}>
-      <Text style={styles.emptyTitle}>
-        {filtered ? 'No entries of this type' : 'No health entries yet'}
-      </Text>
-      <Text style={styles.emptyDesc}>
-        {filtered
-          ? 'Try selecting a different filter or add new entries.'
-          : 'Start logging your symptoms, vitals, and notes to build your health timeline.'}
-      </Text>
+        {/* Middle content */}
+        <View style={cardStyles.middle}>
+          <Text style={[cardStyles.typeLabel, { color }]}>{entryLabel(entry.entryType)}</Text>
+          <Text style={cardStyles.title} numberOfLines={expanded ? undefined : 1}>{entry.title}</Text>
+
+          {/* Apple Health source badge */}
+          {(entry.structuredData as any)?.source === 'apple_health' && (
+            <View style={cardStyles.hkBadge}>
+              <Text style={cardStyles.hkBadgeIcon}>❤️</Text>
+              <Text style={cardStyles.hkBadgeText}>Apple Health</Text>
+            </View>
+          )}
+
+          {!!entry.structuredData?.summary && (
+            <Text style={cardStyles.summary} numberOfLines={expanded ? undefined : 1}>{entry.structuredData.summary}</Text>
+          )}
+
+          {/* Expanded detail */}
+          {expanded && entry.structuredData && (
+            <View style={cardStyles.expandedSection}>
+              {Object.entries(entry.structuredData.labValues ?? {})
+                .slice(0, 6)
+                .map(([key, val], i) => (
+                  <View key={key} style={[cardStyles.dataRow, i % 2 === 1 && cardStyles.dataRowAlt]}>
+                    <Text style={cardStyles.dataKey}>{key.replace(/_/g, ' ')}</Text>
+                    <Text style={[cardStyles.dataVal, { color }]}>{String(val)}</Text>
+                  </View>
+                ))}
+              <View style={cardStyles.expandedBtns}>
+                <TouchableOpacity
+                  style={[cardStyles.askAIBtn, { borderColor: color, flex: 1 }]}
+                  onPress={handleAskAI}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[cardStyles.askAIText, { color }]}>Ask AI About This</Text>
+                </TouchableOpacity>
+                {onDelete && (
+                  <TouchableOpacity
+                    style={cardStyles.deleteBtn}
+                    onPress={() => onDelete(entry.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={cardStyles.deleteBtnText}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Right */}
+        <View style={cardStyles.right}>
+          <Text style={cardStyles.time}>{formatTimeAgo(new Date(entry.createdAt))}</Text>
+          <Text style={cardStyles.chevron}>{expanded ? '⌃' : '⌄'}</Text>
+        </View>
+      </TouchableOpacity>
     </View>
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+const cardStyles = StyleSheet.create({
+  rowContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingRight: 20,
+    marginBottom: 12,
+  },
+  track: {
+    width: 10,
+    alignItems: 'center',
+    paddingTop: 12,
+  },
+  node: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    zIndex: 1,
+  },
+  nodePulse: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    top: -4,
+    left: -4,
+    opacity: 0.4,
+  },
+  trackLine: {
+    flex: 1,
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginTop: 4,
+  },
+  card: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  cardExpanded: {
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  middle: {
+    flex: 1,
+    gap: 3,
+  },
+  typeLabel: {
+    fontSize: 10,
+    fontFamily: FontFamily.bodySemiBold,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+  },
+  title: {
+    fontSize: 15,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '500',
+    color: Colors.textPrimary,
+    lineHeight: 20,
+  },
+  summary: {
+    fontSize: 13,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  right: {
+    alignItems: 'flex-end',
+    gap: 6,
+    flexShrink: 0,
+  },
+  time: {
+    fontSize: 11,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textTertiary,
+  },
+  chevron: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+  },
+  hkBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  hkBadgeIcon: {
+    fontSize: 10,
+  },
+  hkBadgeText: {
+    fontSize: 11,
+    color: '#FF2D55',
+    fontWeight: '600',
+  },
+  expandedSection: {
+    marginTop: 10,
+    gap: 0,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 10,
+  },
+  dataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  dataRowAlt: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  dataKey: {
+    fontSize: 13,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textSecondary,
+    textTransform: 'capitalize',
+  },
+  dataVal: {
+    fontSize: 13,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '500',
+  },
+  askAIBtn: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  askAIText: {
+    fontSize: 14,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '500',
+  },
+  expandedBtns: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  deleteBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,69,58,0.40)',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  deleteBtnText: {
+    fontSize: 14,
+    color: Colors.critical,
+    fontFamily: FontFamily.bodyMedium,
+  },
+});
+
+// ─── Timeline Screen ──────────────────────────────────────────────────────────
 
 export default function TimelineScreen() {
   const insets = useSafeAreaInsets();
-  const { timeline } = useHealthStore();
-  const { refetchAll, isRefetching } = useHealth();
-  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const router = useRouter();
+  const { timeline, isLoading, isRefetching, refetchAll, removeEntry } = useHealth();
+  const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
 
+  const tabBarH = 49 + Math.max(insets.bottom, 0);
+
+  const handleDelete = useCallback(async (entryId: string) => {
+    try {
+      await removeEntry(entryId);
+    } catch { /* ignore */ }
+  }, [removeEntry]);
+
+  // Filter + search
   const filtered = useMemo(() => {
-    if (activeFilter === 'all') return timeline;
-    return timeline.filter((e) => e.type === activeFilter);
-  }, [timeline, activeFilter]);
+    let list = timeline;
+    if (activeFilter !== 'all') {
+      list = list.filter((e) => e.entryType === activeFilter);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (e) =>
+          e.title.toLowerCase().includes(q) ||
+          (e.structuredData?.summary ?? e.rawText ?? '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [timeline, activeFilter, search]);
 
-  const groups = useMemo(() => groupByDate(filtered), [filtered]);
+  // Group by date
+  const grouped = useMemo(() => {
+    const groups: { label: string; entries: FirestoreHealthEntry[] }[] = [];
+    const seen = new Map<string, number>();
+    filtered.forEach((entry) => {
+      const d = new Date(entry.createdAt);
+      const key = format(d, 'yyyy-MM-dd');
+      const label = dateGroupLabel(d);
+      if (!seen.has(key)) {
+        seen.set(key, groups.length);
+        groups.push({ label, entries: [] });
+      }
+      groups[seen.get(key)!].entries.push(entry);
+    });
+    return groups;
+  }, [filtered]);
 
-  const handleRefresh = useCallback(() => {
-    refetchAll();
-  }, [refetchAll]);
+  const labCount = useMemo(() => timeline.filter((e) => e.entryType === 'lab').length, [timeline]);
+  const highPriorityCount = useMemo(() => {
+    return timeline.filter((e) => (e.structuredData?.riskFlags?.length ?? 0) > 0).length;
+  }, [timeline]);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 16 }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Timeline</Text>
-          <Text style={styles.headerSub}>
-            {timeline.length} {timeline.length === 1 ? 'entry' : 'entries'} recorded
-          </Text>
-        </View>
-      </View>
-
-      {/* Filter chips */}
-      <FilterChips active={activeFilter} onChange={setActiveFilter} />
-
-      {/* Timeline list */}
+    <View style={[styles.root, { backgroundColor: Colors.background }]}>
       <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: insets.bottom + 110 },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16, paddingBottom: tabBarH + 24 }]}
         showsVerticalScrollIndicator={false}
-        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={handleRefresh}
-            tintColor={Colors.electric}
-            colors={[Colors.electric]}
-            progressBackgroundColor={Colors.surface}
+            onRefresh={refetchAll}
+            tintColor={Colors.primary}
           />
         }
       >
-        {groups.length === 0 ? (
-          <EmptyState filtered={activeFilter !== 'all'} />
-        ) : (
-          groups.map((group, gi) => (
-            <View key={group.label}>
-              <DateGroupHeader label={group.label} />
-              {group.entries.map((entry, ei) => (
-                <EntryCard
-                  key={entry.id}
-                  entry={entry}
-                  isLast={gi === groups.length - 1 && ei === group.entries.length - 1}
-                />
-              ))}
+        {/* Header */}
+        <Animated.View entering={FadeInDown.duration(280)} style={styles.header}>
+          <Text style={styles.title}>Timeline</Text>
+          <Text style={styles.subtitle}>{timeline.length} health records</Text>
+        </Animated.View>
+
+        {/* Stats row */}
+        <Animated.View entering={FadeInDown.delay(60).duration(280)} style={styles.statsRow}>
+          {[
+            { num: String(timeline.length), label: 'Total' },
+            { num: String(labCount), label: 'Lab Results' },
+            { num: String(highPriorityCount), label: 'High Priority' },
+          ].map((stat) => (
+            <View key={stat.label} style={styles.statCard}>
+              <Text style={styles.statNum}>{stat.num}</Text>
+              <Text style={styles.statLabel}>{stat.label}</Text>
             </View>
-          ))
+          ))}
+        </Animated.View>
+
+        {/* Search bar */}
+        <Animated.View entering={FadeInDown.delay(100).duration(280)} style={styles.searchWrap}>
+          <View style={styles.searchBar}>
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+              <Circle cx="11" cy="11" r="8" stroke={Colors.textTertiary} strokeWidth={1.8} />
+              <Path d="M21 21L16.65 16.65" stroke={Colors.textTertiary} strokeWidth={1.8} strokeLinecap="round" />
+            </Svg>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search records…"
+              placeholderTextColor="rgba(255,255,255,0.25)"
+              value={search}
+              onChangeText={setSearch}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              selectionColor="#4C8DFF"
+              keyboardAppearance="dark"
+            />
+          </View>
+        </Animated.View>
+
+        {/* Filter chips */}
+        <Animated.View entering={FadeInDown.delay(140).duration(280)}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsRow}
+            style={styles.chipsScroll}
+          >
+            {FILTER_OPTIONS.map((opt) => {
+              const active = activeFilter === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  onPress={() => setActiveFilter(opt.id)}
+                  style={[styles.chip, active && styles.chipActive]}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </Animated.View>
+
+        {/* Timeline entries */}
+        {isLoading ? (
+          <Animated.View entering={FadeInDown.delay(160).duration(280)} style={styles.entries}>
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={styles.skeletonCard} />
+            ))}
+          </Animated.View>
+        ) : timeline.length === 0 ? (
+          <Animated.View entering={FadeInDown.delay(160).duration(280)} style={styles.empty}>
+            <Text style={styles.emptyIcon}>📋</Text>
+            <Text style={styles.emptyTitle}>Your health story starts here</Text>
+            <Text style={styles.emptySub}>Upload a health report or add a note to start your timeline.</Text>
+          </Animated.View>
+        ) : grouped.length === 0 ? (
+          <Animated.View entering={FadeInDown.delay(160).duration(280)} style={styles.empty}>
+            <Text style={styles.emptyTitle}>No records found</Text>
+            <Text style={styles.emptySub}>Try a different filter or add a health record.</Text>
+          </Animated.View>
+        ) : (
+          <Animated.View entering={FadeInDown.delay(160).duration(280)} style={styles.entries}>
+            {grouped.map((group, gi) => (
+              <View key={group.label}>
+                {/* Date group header */}
+                <Text style={styles.groupLabel}>{group.label}</Text>
+                {/* Entry track */}
+                <View style={styles.groupEntries}>
+                  {group.entries.map((entry, i) => (
+                    <EntryCard
+                      key={entry.id}
+                      entry={entry}
+                      isFirst={gi === 0 && i === 0}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))}
+          </Animated.View>
         )}
       </ScrollView>
     </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.background,
+  },
+  scroll: {
+    gap: 0,
   },
   header: {
-    paddingHorizontal: Spacing[5],
-    paddingTop: Spacing[4],
-    paddingBottom: Spacing[3],
+    paddingHorizontal: 20,
+    paddingBottom: 4,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontFamily: FontFamily.displayBold,
+  title: {
+    fontSize: 34,
+    fontFamily: FontFamily.bodyBold,
+    fontWeight: '700',
     color: Colors.textPrimary,
-    lineHeight: 34,
+    letterSpacing: -0.5,
   },
-  headerSub: {
-    fontSize: FontSize.sm,
+  subtitle: {
+    fontSize: 15,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textSecondary,
-    marginTop: 3,
-  },
-
-  // ── Filters
-  filtersScroll: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  filtersContent: {
-    paddingHorizontal: Spacing[5],
-    paddingVertical: Spacing[3],
-    gap: Spacing[2],
-    flexDirection: 'row',
-  },
-  filterChip: {
-    paddingHorizontal: Spacing[3],
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-  },
-  filterChipActive: {
-    borderColor: Colors.primary,
-  },
-  filterChipText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textSecondary,
-  },
-
-  // ── Scroll
-  scrollContent: {
-    paddingHorizontal: Spacing[4],
-    paddingTop: Spacing[4],
-  },
-
-  // ── Date group
-  dateGroupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing[3],
-    marginTop: Spacing[2],
-    gap: Spacing[3],
-  },
-  dateGroupLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.border,
-  },
-  dateGroupLabel: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textMuted,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-
-  // ── Swipe-to-delete
-  swipeableContainer: { flex: 1 },
-  swipeDeleteBtn: {
-    width: 80,
-    backgroundColor: Colors.critical,
-    borderRadius: BorderRadius.md,
-    marginLeft: Spacing[2],
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 4,
-  },
-  swipeDeleteIcon: { fontSize: 22 },
-  swipeDeleteLabel: {
-    fontSize: 11,
-    fontFamily: FontFamily.bodyMedium,
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-
-  // ── Ask AI button
-  askAIBtn: {
-    margin: Spacing[3],
-    marginTop: 0,
-    paddingVertical: 10,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.electricMist,
-    borderWidth: 1,
-    borderColor: Colors.electric,
-    alignItems: 'center',
-  },
-  askAIBtnText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.electric,
-  },
-
-  // ── Entry row + timeline
-  entryRow: {
-    flexDirection: 'row',
-    gap: Spacing[3],
-    marginBottom: Spacing[3],
-  },
-  timelineCol: {
-    alignItems: 'center',
-    width: 32,
-  },
-  entryIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timelineLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: Colors.border,
-    marginTop: 4,
-    borderRadius: 1,
-  },
-
-  // ── Card
-  card: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-    marginBottom: Spacing[1],
-  },
-  cardExpanded: {
-    borderColor: Colors.borderActive,
-  },
-  cardTouchable: {
-    padding: Spacing[3],
-    gap: Spacing[2],
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cardTopRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[2],
-  },
-  typePill: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: BorderRadius.full,
-  },
-  typePillText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    letterSpacing: 0.3,
-  },
-  cardTitle: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textPrimary,
-    lineHeight: 20,
-  },
-  cardValue: {
-    fontSize: FontSize.xl,
-    fontFamily: FontFamily.displayBold,
-    color: Colors.textPrimary,
-  },
-  cardUnit: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-  },
-  cardDesc: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing[1],
-  },
-  entryTag: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  entryTagText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-  },
-  cardTime: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
     marginTop: 2,
   },
-
-  // ── Structured data panel
-  structuredPanel: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    padding: Spacing[3],
-    gap: Spacing[4],
-    backgroundColor: Colors.surfaceElevated,
-  },
-  structuredSummary: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-  },
-  structuredSection: {
-    gap: Spacing[2],
-  },
-  structuredSectionLabel: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textMuted,
-    letterSpacing: 1,
-  },
-  labGrid: {
+  statsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing[2],
+    gap: 10,
+    paddingHorizontal: 20,
+    marginTop: 16,
   },
-  labCell: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: Spacing[3],
-    paddingVertical: Spacing[2],
-    minWidth: 100,
-  },
-  labKey: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    marginBottom: 2,
-  },
-  labVal: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textPrimary,
-  },
-  tagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing[2],
-  },
-  tag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-  },
-  tagText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-  },
-  medRow: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: Spacing[3],
-    paddingVertical: Spacing[2],
-    gap: 2,
-  },
-  medName: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textPrimary,
-  },
-  medDetail: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-  },
-  riskRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing[2],
-  },
-  riskDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.warning,
-    marginTop: 5,
-    flexShrink: 0,
-  },
-  riskText: {
+  statCard: {
     flex: 1,
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-  },
-  sourceRow: {
-    paddingTop: Spacing[1],
-  },
-  sourceText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    fontStyle: 'italic',
-  },
-
-  // ── Empty
-  empty: {
-    paddingTop: Spacing[12],
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 16,
+    paddingVertical: 14,
     alignItems: 'center',
-    gap: Spacing[3],
-    paddingHorizontal: Spacing[8],
+  },
+  statNum: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.40)',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  searchWrap: {
+    paddingHorizontal: 20,
+    marginTop: 16,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 12,
+    height: 38,
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textPrimary,
+    paddingVertical: 0,
+  },
+  chipsScroll: {
+    marginTop: 12,
+  },
+  chipsRow: {
+    gap: 8,
+    paddingHorizontal: 20,
+  },
+  chip: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 100,
+    height: 30,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipActive: {
+    backgroundColor: '#4C8DFF',
+    borderColor: '#4C8DFF',
+  },
+  chipText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.45)',
+  },
+  chipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  entries: {
+    marginTop: 20,
+    gap: 0,
+  },
+  groupLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.35)',
+    letterSpacing: 1.0,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    paddingLeft: 24,
+    marginTop: 8,
+  },
+  groupEntries: {
+    paddingLeft: 20,
+  },
+  empty: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 8,
+  },
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: 4,
   },
   emptyTitle: {
-    fontSize: FontSize.xl,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
-  emptyDesc: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodyRegular,
+    fontSize: 17,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '600',
     color: Colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
+  },
+  emptySub: {
+    fontSize: 15,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textTertiary,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  skeletonCard: {
+    height: 72,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    marginBottom: 12,
+    marginHorizontal: 20,
   },
 });

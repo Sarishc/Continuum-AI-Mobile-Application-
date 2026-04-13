@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import Svg, { Path, Polyline } from 'react-native-svg';
 import { AnimatedBackground } from '../components/ui/AnimatedBackground';
 import { HealthScoreRing } from '../components/ui/HealthScoreRing';
@@ -226,7 +227,7 @@ export default function WeeklyBriefScreen() {
 
   const handleShare = () => {
     if (!brief) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     Share.share({
       message: generateShareText(brief),
       title: 'My Weekly Health Brief',
@@ -424,11 +425,40 @@ export default function WeeklyBriefScreen() {
               ))}
             </Animated.View>
 
+            {/* ── Health Trajectory (trends) ── */}
+            {brief.trendSummary && (
+              <Animated.View entering={FadeInDown.delay(335).duration(380)} style={s.section}>
+                <BriefSectionHeader title="HEALTH TRAJECTORY" />
+                <View style={s.trajectoryCard}>
+                  <View style={s.trajRow}>
+                    {[
+                      { count: brief.trendSummary.improving, label: 'Improving', color: '#30D158' },
+                      { count: brief.trendSummary.stable,    label: 'Stable',    color: '#4C8DFF' },
+                      { count: brief.trendSummary.worsening, label: 'Attention', color: '#FF453A' },
+                    ].map((stat) => (
+                      <View key={stat.label} style={s.trajStat}>
+                        <Text style={[s.trajCount, { color: stat.color }]}>{stat.count}</Text>
+                        <Text style={s.trajLabel}>{stat.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {brief.trendSummary.topTrend && (
+                    <View style={s.trajTopTrend}>
+                      <Text style={s.trajTopTrendLabel}>Best trend: </Text>
+                      <Text style={[s.trajTopTrendValue, { color: '#30D158' }]}>
+                        {brief.trendSummary.topTrend.metric} ↓{Math.abs(brief.trendSummary.topTrend.changePercent)}%
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </Animated.View>
+            )}
+
             {/* ── Generate Report Card ── */}
             <Animated.View entering={FadeInUp.delay(340).duration(380)} style={s.reportCardWrap}>
               <TouchableOpacity
                 onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  hapticImpact(Haptics.ImpactFeedbackStyle.Medium);
                   router.push('/report-card');
                 }}
                 activeOpacity={0.8}
@@ -449,7 +479,7 @@ export default function WeeklyBriefScreen() {
             <Animated.View entering={FadeInUp.delay(360).duration(380)} style={s.regenerateWrap}>
               <TouchableOpacity
                 onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  hapticImpact(Haptics.ImpactFeedbackStyle.Light);
                   loadBrief();
                 }}
                 style={s.regenerateBtn}
@@ -739,6 +769,27 @@ const s = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 22,
   },
+
+  // Trajectory card
+  trajectoryCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14, borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 16,
+  },
+  trajRow: {
+    flexDirection: 'row', justifyContent: 'space-around', marginBottom: 12,
+  },
+  trajStat: { alignItems: 'center' },
+  trajCount: { fontSize: 28, fontWeight: '700' },
+  trajLabel: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  trajTopTrend: {
+    flexDirection: 'row',
+    borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 10,
+  },
+  trajTopTrendLabel: { fontSize: 13, color: Colors.textSecondary },
+  trajTopTrendValue: { fontSize: 13, fontWeight: '600' },
 
   // Report Card CTA
   reportCardWrap: { paddingTop: Spacing[4] },

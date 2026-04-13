@@ -15,16 +15,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  LayoutAnimation,
-  UIManager,
-  ActionSheetIOS,
-  Alert,
-  Animated as RNAnimated,
+  ScrollView,
 } from 'react-native';
 import Animated, {
+  FadeIn,
+  FadeInUp,
   FadeInLeft,
   FadeInRight,
-  FadeInUp,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -32,1340 +29,915 @@ import Animated, {
   withRepeat,
   withSequence,
   withDelay,
-  Easing,
-  interpolate,
   cancelAnimation,
+  Easing,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import Svg, { Path, Circle } from 'react-native-svg';
+import { hapticImpact, hapticNotification } from '@/utils/haptics';
+import Svg, { Path, Circle, G } from 'react-native-svg';
 import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
-import { track } from '../../services/analytics';
-
-import { useHealthStore } from '../../store/healthStore';
 import { useSubscriptionStore } from '../../store/subscriptionStore';
-import { healthAskApi, mockAIResponse, mockRuleResponse } from '../../api/chat';
-import { ConversationHistorySheet } from '../../components/ui/ConversationHistorySheet';
+import { askHealthQuestion } from '../../services/aiService';
+import { saveConversation } from '../../services/firestoreService';
+import { useHealth } from '../../hooks/useHealth';
+import { useHealthKit } from '../../hooks/useHealthKit';
 import { SpecialistDetailSheet } from '../../components/ui/SpecialistDetailSheet';
+import { ConversationHistorySheet } from '../../components/ui/ConversationHistorySheet';
+import { showToast } from '../../store/toastStore';
 
 import { Colors } from '../../constants/colors';
-import { FontFamily, FontSize } from '../../constants/typography';
-import { BorderRadius, Spacing } from '../../constants/theme';
-import type { ChatMessage, SpecialistRecommendation, EngineMode } from '../../types';
+import { FontFamily } from '../../constants/typography';
+import type { ChatMessage, SpecialistRecommendation } from '../../types';
 
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+const { width: SCREEN_W } = Dimensions.get('window');
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const MAX_BUBBLE_WIDTH = SCREEN_WIDTH * 0.78;
+// ─── SVG icons ────────────────────────────────────────────────────────────────
 
-
-// ─── SVG Icons ────────────────────────────────────────────────────────────────
-
-function PaperclipIcon() {
+function PlusIcon({ color }: { color: string }) {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
-        stroke={Colors.textSecondary}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <Path d="M12 5V19M5 12H19" stroke={color} strokeWidth={2} strokeLinecap="round" />
     </Svg>
   );
 }
 
-function MicIcon() {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"
-        stroke={Colors.textMuted}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      />
-      <Path
-        d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"
-        stroke={Colors.textMuted}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function ArrowUpIcon() {
+function ArrowUpIcon({ color }: { color: string }) {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 19V5M5 12l7-7 7 7" stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M12 19V5M5 12L12 5L19 12" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
 
-function HistoryIcon() {
+function MicIcon({ color }: { color: string }) {
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 8v4l3 3" stroke={Colors.textSecondary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M3.05 11a9 9 0 1 0 .5-3M3 4v4h4" stroke={Colors.textSecondary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 1C10.3 1 9 2.3 9 4V12C9 13.7 10.3 15 12 15C13.7 15 15 13.7 15 12V4C15 2.3 13.7 1 12 1Z"
+        stroke={color} strokeWidth={1.8} />
+      <Path d="M19 10V12C19 15.9 15.9 19 12 19C8.1 19 5 15.9 5 12V10" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Path d="M12 19V23M8 23H16" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
     </Svg>
   );
 }
 
-function ChevronDownIcon({ expanded }: { expanded: boolean }) {
+function HealthBotIcon() {
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none"
-      style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}
-    >
-      <Path d="M6 9l6 6 6-6" stroke={Colors.primary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    <Svg width={60} height={60} viewBox="0 0 60 60" fill="none">
+      <Circle cx="30" cy="30" r="28" stroke={Colors.primary} strokeWidth={1.5} strokeOpacity={0.3} />
+      <Circle cx="30" cy="30" r="20" fill={`${Colors.primary}14`} />
+      <Path d="M20 30C20 24.5 24.5 20 30 20C35.5 20 40 24.5 40 30" stroke={Colors.primary} strokeWidth={2} strokeLinecap="round" />
+      <Circle cx="25" cy="32" r="3" fill={Colors.primary} fillOpacity={0.8} />
+      <Circle cx="35" cy="32" r="3" fill={Colors.primary} fillOpacity={0.8} />
+      <Path d="M26 38C27.3 39.3 28.7 40 30 40C31.3 40 32.7 39.3 34 38" stroke={Colors.primary} strokeWidth={1.8} strokeLinecap="round" />
+      {/* Wifi signal arcs above */}
+      <Path d="M26 22C27.2 20.7 28.6 20 30 20C31.4 20 32.8 20.7 34 22" stroke={Colors.primary} strokeWidth={1.5} strokeLinecap="round" strokeOpacity={0.5} />
     </Svg>
   );
 }
 
-function DocumentIcon() {
+function ChevronRightIcon({ color }: { color: string }) {
   return (
-    <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
-      <Path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke={Colors.textMuted} strokeWidth={1.8} strokeLinejoin="round" />
-      <Path d="M14 2v6h6" stroke={Colors.textMuted} strokeWidth={1.8} strokeLinejoin="round" />
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 18L15 12L9 6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
 
-function StethoscopeIcon({ color }: { color: string }) {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6 6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.3.3 0 1 0 .2.3" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-      <Path d="M8 15v1a6 6 0 0 0 6 6 6 6 0 0 0 6-6v-4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-      <Circle cx="20" cy="10" r="2" stroke={color} strokeWidth={1.8} />
-    </Svg>
-  );
-}
-
-
-// ─── Engine Toggle ────────────────────────────────────────────────────────────
-
-interface EngineToggleProps {
-  mode: EngineMode;
-  onChange: (mode: EngineMode) => void;
-}
-
-function EngineCard({ active, label, subtitle, color, onPress }: {
-  active: boolean; label: string; subtitle: string; color: string; onPress: () => void;
-}) {
-  const scale = useSharedValue(1);
-  const cardStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-  return (
-    <TouchableOpacity
-      onPress={() => {
-        scale.value = withSequence(withTiming(0.96, { duration: 80 }), withSpring(1, { damping: 15 }));
-        onPress();
-      }}
-      activeOpacity={1}
-    >
-      <Animated.View style={[toggleStyles.card, active && { borderColor: color, backgroundColor: `${color}14` }, cardStyle]}>
-        <View style={[toggleStyles.cardDot, { backgroundColor: active ? color : Colors.textMuted }]} />
-        <View style={toggleStyles.cardText}>
-          <Text style={[toggleStyles.cardLabel, active && { color }]}>{label}</Text>
-          <Text style={toggleStyles.cardSub}>{subtitle}</Text>
-        </View>
-        {active && <View style={[toggleStyles.activePip, { backgroundColor: color }]} />}
-      </Animated.View>
-    </TouchableOpacity>
-  );
-}
-
-function EngineToggle({ mode, onChange }: EngineToggleProps) {
-  const router = useRouter();
-  const isPro = useSubscriptionStore((s) => s.isPro);
-
-  const handlePress = (next: EngineMode) => {
-    if (next === mode) return;
-    if (next === 'ai' && !isPro) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      router.push('/paywall' as any);
-      return;
-    }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onChange(next);
-  };
-
-  return (
-    <View style={toggleStyles.row}>
-      <EngineCard
-        active={mode === 'rule'}
-        label="Rule Engine"
-        subtitle="Deterministic"
-        color={Colors.caution}
-        onPress={() => handlePress('rule')}
-      />
-      <EngineCard
-        active={mode === 'ai'}
-        label={isPro ? 'AI Mode' : '🔒 AI Mode'}
-        subtitle="Generative"
-        color={Colors.electric}
-        onPress={() => handlePress('ai')}
-      />
-    </View>
-  );
-}
-
-const toggleStyles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: Spacing[2], paddingHorizontal: Spacing[4], paddingBottom: Spacing[3] },
-  card: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[2],
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing[3],
-    paddingVertical: Spacing[2],
-  },
-  cardDot: { width: 8, height: 8, borderRadius: 4 },
-  cardText: { flex: 1 },
-  cardLabel: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textSecondary,
-  },
-  cardSub: {
-    fontSize: 10,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    marginTop: 1,
-  },
-  activePip: { width: 5, height: 5, borderRadius: 2.5 },
-});
-
-
-// ─── Typing Indicator ─────────────────────────────────────────────────────────
-
-function TypingDot({ delay }: { delay: number }) {
-  const scale = useSharedValue(1);
-
-  useEffect(() => {
-    scale.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(1.5, { duration: 350, easing: Easing.inOut(Easing.ease) }),
-          withTiming(1,   { duration: 350, easing: Easing.inOut(Easing.ease) }),
-        ),
-        -1,
-        false
-      )
-    );
-    return () => cancelAnimation(scale);
-  }, []);
-
-  const style = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return <Animated.View style={[typingStyles.dot, style]} />;
-}
-
-function ScanLine() {
-  const translateX = useSharedValue(-80);
-  useEffect(() => {
-    translateX.value = withRepeat(
-      withSequence(
-        withTiming(80, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
-        withTiming(-80, { duration: 0 })
-      ),
-      -1,
-      false
-    );
-    return () => cancelAnimation(translateX);
-  }, []);
-  const style = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-  return (
-    <View style={typingStyles.scanTrack}>
-      <Animated.View style={[typingStyles.scanLine, style]} />
-    </View>
-  );
-}
+// ─── Typing indicator ────────────────────────────────────────────────────────
 
 function TypingIndicator() {
+  const dot1 = useSharedValue(0);
+  const dot2 = useSharedValue(0);
+  const dot3 = useSharedValue(0);
+
+  useEffect(() => {
+    const animate = (sv: typeof dot1, delay: number) => {
+      sv.value = withDelay(
+        delay,
+        withRepeat(
+          withSequence(
+            withTiming(-6, { duration: 280, easing: Easing.out(Easing.ease) }),
+            withTiming(0, { duration: 280, easing: Easing.in(Easing.ease) }),
+          ),
+          -1,
+          false,
+        ),
+      );
+    };
+    animate(dot1, 0);
+    animate(dot2, 160);
+    animate(dot3, 320);
+    return () => {
+      cancelAnimation(dot1);
+      cancelAnimation(dot2);
+      cancelAnimation(dot3);
+    };
+  }, []);
+
+  const s1 = useAnimatedStyle(() => ({ transform: [{ translateY: dot1.value }] }));
+  const s2 = useAnimatedStyle(() => ({ transform: [{ translateY: dot2.value }] }));
+  const s3 = useAnimatedStyle(() => ({ transform: [{ translateY: dot3.value }] }));
+
   return (
-    <Animated.View entering={FadeInLeft.duration(250)} style={typingStyles.bubble}>
-      <View style={typingStyles.dotsRow}>
-        <TypingDot delay={0} />
-        <TypingDot delay={200} />
-        <TypingDot delay={400} />
-      </View>
-      <ScanLine />
-    </Animated.View>
+    <View style={typingStyles.bubble}>
+      <Animated.View style={[typingStyles.dot, s1]} />
+      <Animated.View style={[typingStyles.dot, s2]} />
+      <Animated.View style={[typingStyles.dot, s3]} />
+    </View>
   );
 }
 
 const typingStyles = StyleSheet.create({
   bubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 18,
-    borderTopLeftRadius: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginLeft: Spacing[4],
-    gap: 8,
-    marginBottom: Spacing[2],
-  },
-  dotsRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: Colors.textMuted,
-  },
-  scanTrack: {
-    height: 2,
-    width: 80,
-    backgroundColor: Colors.border,
-    borderRadius: 1,
-    overflow: 'hidden',
-  },
-  scanLine: {
-    width: 40,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: Colors.electric,
-    opacity: 0.7,
-  },
-});
-
-// ─── Confidence Bar ───────────────────────────────────────────────────────────
-
-function ConfidenceBar({ level }: { level: 'low' | 'medium' | 'high' }) {
-  const config = {
-    high:   { label: 'High',   color: Colors.positive, pct: 0.85 },
-    medium: { label: 'Medium', color: Colors.caution,  pct: 0.55 },
-    low:    { label: 'Low',    color: Colors.critical,  pct: 0.25 },
-  }[level];
-
-  const barWidth = useSharedValue(0);
-  useEffect(() => {
-    barWidth.value = withDelay(200, withTiming(config.pct, { duration: 600, easing: Easing.out(Easing.ease) }));
-  }, []);
-  const barStyle = useAnimatedStyle(() => ({ width: `${barWidth.value * 100}%` as any }));
-
-  return (
-    <View style={confStyles.row}>
-      <Text style={confStyles.label}>Confidence</Text>
-      <View style={confStyles.track}>
-        <Animated.View style={[confStyles.fill, { backgroundColor: config.color }, barStyle]} />
-      </View>
-      <View style={[confStyles.badge, { backgroundColor: `${config.color}18` }]}>
-        <Text style={[confStyles.badgeText, { color: config.color }]}>{config.label}</Text>
-      </View>
-    </View>
-  );
-}
-
-const confStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
-  label: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyRegular, color: Colors.textMuted, width: 68 },
-  track: { flex: 1, height: 4, backgroundColor: Colors.border, borderRadius: 2, overflow: 'hidden' },
-  fill: { height: 4, borderRadius: 2 },
-  badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: BorderRadius.full },
-  badgeText: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyMedium },
-});
-
-// ─── Specialist inline card ───────────────────────────────────────────────────
-
-interface SpecialistInlineCardProps {
-  specialist: SpecialistRecommendation;
-  onPress: () => void;
-}
-
-function SpecialistInlineCard({ specialist, onPress }: SpecialistInlineCardProps) {
-  const urgencyColor = specialist.urgency === 'routine' ? Colors.primary
-    : specialist.urgency === 'soon' ? Colors.warning
-    : Colors.critical;
-
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.78} style={specStyles.card}>
-      <View style={[specStyles.iconCircle, { backgroundColor: `${urgencyColor}18` }]}>
-        <StethoscopeIcon color={urgencyColor} />
-      </View>
-      <View style={specStyles.textCol}>
-        <Text style={specStyles.seeLabel}>See {specialist.type}</Text>
-        <View style={[specStyles.urgencyPill, { backgroundColor: `${urgencyColor}18` }]}>
-          <Text style={[specStyles.urgencyText, { color: urgencyColor }]}>
-            {specialist.urgency.charAt(0).toUpperCase() + specialist.urgency.slice(1)}
-          </Text>
-        </View>
-      </View>
-      <Text style={specStyles.arrow}>→</Text>
-    </TouchableOpacity>
-  );
-}
-
-const specStyles = StyleSheet.create({
-  card: {
     flexDirection: 'row',
+    gap: 5,
     alignItems: 'center',
-    gap: Spacing[3],
     backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: BorderRadius.md,
-    padding: Spacing[3],
-    marginTop: Spacing[2],
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignSelf: 'flex-start',
+    marginLeft: 12,
   },
-  iconCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  textCol: { flex: 1, gap: 3 },
-  seeLabel: { fontSize: FontSize.sm, fontFamily: FontFamily.bodySemiBold, color: Colors.textPrimary },
-  urgencyPill: { alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 2, borderRadius: BorderRadius.full },
-  urgencyText: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyMedium },
-  arrow: { fontSize: FontSize.md, color: Colors.textMuted },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.textSecondary,
+  },
 });
 
+// ─── Blinking cursor ─────────────────────────────────────────────────────────
 
-// ─── Message Bubble ───────────────────────────────────────────────────────────
+function BlinkingCursor() {
+  const opacity = useSharedValue(1);
+  useEffect(() => {
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(0, { duration: 500 }),
+        withTiming(1, { duration: 500 }),
+      ),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(opacity);
+  }, []);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return (
+    <Animated.Text style={[bubbleStyles.cursor, style]}>|</Animated.Text>
+  );
+}
+
+// ─── Message bubble ───────────────────────────────────────────────────────────
 
 interface MessageBubbleProps {
   message: ChatMessage;
-  onSpecialistPress: (s: SpecialistRecommendation) => void;
-  onReasoningToggle: (id: string) => void;
+  onSpecialistPress?: (s: SpecialistRecommendation) => void;
 }
 
-const MessageBubble = React.memo(function MessageBubble({ message, onSpecialistPress, onReasoningToggle }: MessageBubbleProps) {
-  const { role, content, confidence, reasoning, disclaimer, specialist,
-          attachment, reasoningExpanded, timestamp } = message;
+function MessageBubble({ message, onSpecialistPress }: MessageBubbleProps) {
+  const [reasoningOpen, setReasoningOpen] = useState(false);
+  const chevronRot = useSharedValue(0);
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${withSpring(reasoningOpen ? 90 : 0, { damping: 18, stiffness: 300 })}deg` }],
+  }));
 
-  // ── System message ─────────────────────────────────────────────────────────
-  if (role === 'system') {
+  const isUser = message.role === 'user';
+  const isStreaming = (message as any).isStreaming as boolean | undefined;
+  const displayText: string = isStreaming
+    ? ((message as any).displayedContent as string) ?? ''
+    : message.content;
+
+  if (isUser) {
     return (
-      <Animated.View entering={FadeInUp.duration(300)} style={msgStyles.systemRow}>
-        <Text style={msgStyles.systemText}>{content}</Text>
+      <Animated.View entering={FadeInRight.duration(220)} style={bubbleStyles.userRow}>
+        <View style={bubbleStyles.userBubble}>
+          <Text style={bubbleStyles.userText}>{message.content}</Text>
+        </View>
       </Animated.View>
     );
   }
 
-  // ── User message ───────────────────────────────────────────────────────────
-  if (role === 'user') {
-    return (
-      <Animated.View entering={FadeInRight.duration(280)} style={msgStyles.userRow}>
-        {attachment && (
-          <View style={msgStyles.attachPill}>
-            <DocumentIcon />
-            <Text style={msgStyles.attachName} numberOfLines={1}>
-              {attachment.name.length > 22 ? attachment.name.slice(0, 22) + '…' : attachment.name}
-            </Text>
-          </View>
-        )}
-        <LinearGradient
-          colors={Colors.gradientElectric}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={msgStyles.userBubble}
-        >
-          <Text style={msgStyles.userText}>{content}</Text>
-          <Text style={msgStyles.userTime}>
-            {format(new Date(timestamp), 'h:mm a')}
-          </Text>
-        </LinearGradient>
-      </Animated.View>
-    );
-  }
-
-  // ── AI message ─────────────────────────────────────────────────────────────
-  const handleReasoningToggle = () => {
-    LayoutAnimation.configureNext(
-      LayoutAnimation.create(220, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)
-    );
-    onReasoningToggle(message.id);
+  const toggleReasoning = () => {
+    setReasoningOpen((o) => !o);
+    chevronRot.value = reasoningOpen ? 0 : 1;
   };
 
-  const router = useRouter();
-
+  // AI bubble
   return (
-    <Animated.View entering={FadeInLeft.duration(280)} style={msgStyles.aiRow}>
-      <View style={msgStyles.aiBubble}>
-        {/* Main answer */}
-        <Text style={msgStyles.aiText}>{content}</Text>
+    <Animated.View entering={FadeInLeft.duration(220)} style={bubbleStyles.aiRow}>
+      <View style={bubbleStyles.aiBubble}>
+        {/* Message text + cursor */}
+        <View style={bubbleStyles.textRow}>
+          <Text style={bubbleStyles.aiText}>{displayText}</Text>
+          {isStreaming && <BlinkingCursor />}
+        </View>
 
-        {/* Pro limit upgrade link */}
-        {message.metadata?.isProLimit && (
-          <TouchableOpacity
-            onPress={() => router.push('/paywall' as any)}
-            style={msgStyles.upgradeLinkRow}
-          >
-            <Text style={msgStyles.upgradeLink}>Upgrade to Pro →</Text>
-          </TouchableOpacity>
+        {/* Confidence pill — show after streaming completes */}
+        {!isStreaming && message.confidenceScore !== undefined && (
+          <Animated.View entering={FadeIn.delay(200).duration(300)} style={bubbleStyles.confRow}>
+            <View style={bubbleStyles.confPill}>
+              <Text style={bubbleStyles.confText}>
+                {Math.round(message.confidenceScore * 100)}% confident
+              </Text>
+            </View>
+          </Animated.View>
         )}
 
-        {/* Confidence */}
-        {confidence && <ConfidenceBar level={confidence} />}
-
-        {/* Reasoning accordion */}
-        {reasoning && (
-          <View style={msgStyles.reasoningSection}>
+        {/* Reasoning toggle */}
+        {!isStreaming && !!message.reasoning && (
+          <Animated.View entering={FadeIn.delay(400).duration(300)}>
             <TouchableOpacity
-              onPress={handleReasoningToggle}
+              onPress={toggleReasoning}
+              style={bubbleStyles.reasoningToggle}
               activeOpacity={0.7}
-              style={msgStyles.reasoningToggle}
             >
-              <Text style={msgStyles.reasoningToggleText}>
-                {reasoningExpanded ? 'Hide reasoning' : 'View reasoning'} →
-              </Text>
-              <ChevronDownIcon expanded={!!reasoningExpanded} />
+              <Text style={bubbleStyles.reasoningLabel}>Reasoning</Text>
+              <Animated.View style={chevronStyle}>
+                <ChevronRightIcon color={Colors.textTertiary} />
+              </Animated.View>
             </TouchableOpacity>
-            {reasoningExpanded && (
-              <View style={msgStyles.reasoningBody}>
-                <Text style={msgStyles.reasoningText}>{reasoning}</Text>
+            {reasoningOpen && (
+              <View style={bubbleStyles.reasoningBody}>
+                <Text style={bubbleStyles.reasoningText}>{message.reasoning}</Text>
               </View>
             )}
-          </View>
+          </Animated.View>
         )}
 
         {/* Disclaimer */}
-        <Text style={msgStyles.disclaimer}>
-          {disclaimer ?? 'This is not medical advice. Always consult a healthcare professional.'}
-        </Text>
+        {!isStreaming && (
+          <Text style={bubbleStyles.disclaimer}>Not medical advice.</Text>
+        )}
 
-        {/* Specialist card */}
-        {specialist && (
-          <SpecialistInlineCard
-            specialist={specialist}
-            onPress={() => onSpecialistPress(specialist)}
-          />
+        {/* Specialist pill */}
+        {!isStreaming && message.specialist && (
+          <TouchableOpacity
+            onPress={() => onSpecialistPress?.(message.specialist!)}
+            style={bubbleStyles.specialistPill}
+            activeOpacity={0.75}
+          >
+            <Text style={bubbleStyles.specialistText}>
+              See {message.specialist.type} →
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
     </Animated.View>
   );
-});
+}
 
-const msgStyles = StyleSheet.create({
-  // System
-  systemRow: { alignItems: 'center', paddingVertical: Spacing[3] },
-  systemText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    fontStyle: 'italic',
-  },
-  // Pro limit upgrade
-  upgradeLinkRow: { marginTop: Spacing[2] },
-  upgradeLink: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.electric,
-  },
-  // User
-  userRow: { alignItems: 'flex-end', paddingHorizontal: Spacing[4], marginBottom: Spacing[3] },
-  attachPill: {
+const bubbleStyles = StyleSheet.create({
+  userRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 4,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  attachName: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
+    justifyContent: 'flex-end',
+    marginHorizontal: 12,
+    marginBottom: 8,
   },
   userBubble: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#4C8DFF',
     borderRadius: 18,
-    borderTopLeftRadius: 4,
-    padding: Spacing[3],
-    maxWidth: MAX_BUBBLE_WIDTH,
-    gap: 4,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    maxWidth: '78%',
   },
   userText: {
-    fontSize: FontSize.md,
+    fontSize: 15,
     fontFamily: FontFamily.bodyRegular,
     color: '#FFFFFF',
     lineHeight: 22,
   },
-  userTime: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: 'rgba(255,255,255,0.6)',
-    alignSelf: 'flex-end',
+  aiRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginHorizontal: 12,
+    marginBottom: 8,
   },
-  // AI
-  aiRow: { paddingHorizontal: Spacing[4], marginBottom: Spacing[3], alignItems: 'flex-start' },
   aiBubble: {
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
     borderRadius: 18,
-    borderTopLeftRadius: 4,
-    padding: Spacing[4],
-    maxWidth: MAX_BUBBLE_WIDTH,
-    gap: Spacing[3],
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 12,
+    maxWidth: '88%',
+    gap: 10,
+  },
+  confRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+  },
+  confPill: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  confText: {
+    fontSize: 11,
+    fontFamily: FontFamily.bodyRegular,
+    color: 'rgba(255,255,255,0.45)',
   },
   aiText: {
-    fontSize: FontSize.md,
+    fontSize: 15,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textPrimary,
     lineHeight: 22,
   },
-  reasoningSection: { gap: 6 },
   reasoningToggle: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingTop: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.06)',
   },
-  reasoningToggleText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.primary,
+  reasoningLabel: {
+    fontSize: 12,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textTertiary,
   },
   reasoningBody: {
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderLeftWidth: 2,
     borderLeftColor: Colors.primary,
-    paddingLeft: Spacing[3],
-    paddingVertical: Spacing[2],
-    borderRadius: 2,
-    marginTop: 2,
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 4,
   },
   reasoningText: {
-    fontSize: FontSize.sm,
+    fontSize: 13,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textSecondary,
-    fontStyle: 'italic',
     lineHeight: 20,
   },
   disclaimer: {
-    fontSize: FontSize.xs,
+    fontSize: 11,
     fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    fontStyle: 'italic',
-    lineHeight: 16,
+    color: 'rgba(255,255,255,0.20)',
+    marginTop: -4,
+  },
+  specialistPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 100,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  specialistText: {
+    fontSize: 12,
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.textSecondary,
+  },
+  textRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    flexWrap: 'wrap',
+  },
+  cursor: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 15,
+    lineHeight: 22,
+    marginLeft: 1,
   },
 });
 
+// ─── Engine Selector (iOS segmented control aesthetic) ───────────────────────
 
-// ─── Empty State ──────────────────────────────────────────────────────────────
+interface EngineSelectorProps {
+  mode: 'rule' | 'ai';
+  onChange: (mode: 'rule' | 'ai') => void;
+}
 
-const QUICK_PROMPTS = [
-  'Is my blood pressure normal?',
-  'What does my HbA1c mean?',
-  'Should I be worried about my symptoms?',
-  'What specialist should I see?',
-  'Review my medications',
-  'Am I at risk for diabetes?',
+function EngineSelector({ mode, onChange }: EngineSelectorProps) {
+  const translateX = useSharedValue(mode === 'rule' ? 0 : 1);
+
+  const pillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: withSpring(translateX.value * ((SCREEN_W > 430 ? 390 : SCREEN_W) / 2 - 8), { damping: 20, stiffness: 400 }) }],
+  }));
+
+  const handleChange = (m: 'rule' | 'ai') => {
+    translateX.value = m === 'rule' ? 0 : 1;
+    onChange(m);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  return (
+    <View style={segStyles.container}>
+      {/* Sliding active pill */}
+      <Animated.View style={[segStyles.pill, pillStyle]} />
+      {/* Buttons */}
+      <TouchableOpacity style={segStyles.option} onPress={() => handleChange('rule')} activeOpacity={1}>
+        <Text style={[segStyles.optionText, mode === 'rule' ? segStyles.activeText : segStyles.inactiveText]}>
+          Rule Engine
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={segStyles.option} onPress={() => handleChange('ai')} activeOpacity={1}>
+        <Text style={[segStyles.optionText, mode === 'ai' ? segStyles.activeText : segStyles.inactiveText]}>
+          AI Mode
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const segStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 12,
+    padding: 3,
+    marginHorizontal: 16,
+    position: 'relative',
+  },
+  pill: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    right: '50%',
+    bottom: 3,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.15,
+        shadowRadius: 3,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  option: {
+    flex: 1,
+    paddingVertical: 6,
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  optionText: {
+    fontSize: 13,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '500',
+  },
+  activeText: {
+    color: '#000000',
+  },
+  inactiveText: {
+    color: Colors.textSecondary,
+  },
+});
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+const SUGGESTIONS = [
+  "What does my HbA1c mean?",
+  "How's my blood pressure?",
+  "Should I be concerned about anything?",
+  "What medications am I on?",
+  "How has my health improved recently?",
+  "Explain my lab results",
 ];
 
 interface EmptyStateProps {
-  onPromptSelect: (prompt: string) => void;
+  onSuggestion: (s: string) => void;
 }
 
-function EmptyState({ onPromptSelect }: EmptyStateProps) {
+function EmptyState({ onSuggestion }: EmptyStateProps) {
+  const row1 = SUGGESTIONS.slice(0, 3);
+  const row2 = SUGGESTIONS.slice(3);
+
   return (
-    <Animated.View entering={FadeInUp.duration(400)} style={emptyStyles.root}>
-      {/* Logo mark */}
-      <LinearGradient
-        colors={Colors.gradientElectric}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={emptyStyles.logo}
-      >
-        <Text style={emptyStyles.logoLetter}>C</Text>
-      </LinearGradient>
-
-      <Text style={emptyStyles.headline}>Ask anything about{'\n'}your health</Text>
-      <Text style={emptyStyles.sub}>I have context from your health profile</Text>
-
-      {/* Suggestion rows */}
-      <View style={emptyStyles.suggestions}>
-        {QUICK_PROMPTS.map((prompt, i) => (
-
-          <Animated.View key={prompt} entering={FadeInUp.delay(i * 60).duration(300)}>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onPromptSelect(prompt);
-              }}
-              activeOpacity={0.75}
-              style={emptyStyles.row}
-            >
-              <Text style={emptyStyles.rowText}>{prompt}</Text>
-              <Text style={emptyStyles.rowArrow}>→</Text>
-            </TouchableOpacity>
-          </Animated.View>
+    <Animated.View entering={FadeIn.duration(500)} style={emptyStyles.container}>
+      <HealthBotIcon />
+      <Text style={emptyStyles.title}>Ask me anything</Text>
+      <Text style={emptyStyles.sub}>{"About your labs, symptoms, medications,\nor anything health-related."}</Text>
+      {/* Chip rows */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={emptyStyles.chipRow} contentContainerStyle={{ gap: 8, paddingHorizontal: 20 }}>
+        {row1.map((s) => (
+          <TouchableOpacity key={s} onPress={() => onSuggestion(s)} style={emptyStyles.chip} activeOpacity={0.75}>
+            <Text style={emptyStyles.chipText}>{s}</Text>
+          </TouchableOpacity>
         ))}
-      </View>
-
-      {/* Powered by Claude badge */}
-      <View style={emptyStyles.claudeBadge}>
-        <Text style={emptyStyles.claudeBadgeText}>POWERED BY CLAUDE</Text>
-      </View>
+      </ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={emptyStyles.chipRow} contentContainerStyle={{ gap: 8, paddingHorizontal: 20 }}>
+        {row2.map((s) => (
+          <TouchableOpacity key={s} onPress={() => onSuggestion(s)} style={emptyStyles.chip} activeOpacity={0.75}>
+            <Text style={emptyStyles.chipText}>{s}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </Animated.View>
   );
 }
 
 const emptyStyles = StyleSheet.create({
-  root: {
+  container: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: Spacing[5],
-    paddingBottom: 80,
-    paddingTop: Spacing[10],
-    gap: Spacing[4],
-  },
-  logo: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing[2],
-    ...Platform.select({
-      ios: { shadowColor: Colors.electric, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20 },
-      android: { elevation: 6 },
-    }),
+    paddingVertical: 40,
+    gap: 12,
   },
-  logoLetter: {
-    fontSize: 30,
-    fontFamily: FontFamily.displayExtraBold,
-    color: '#FFFFFF',
-    lineHeight: 36,
-  },
-  headline: {
-    fontSize: FontSize.xl,
-    fontFamily: FontFamily.displayBold,
+  title: {
+    fontSize: 24,
+    fontFamily: FontFamily.bodyBold,
+    fontWeight: '600',
     color: Colors.textPrimary,
-    textAlign: 'center',
-    lineHeight: 28,
+    marginTop: 12,
   },
   sub: {
-    fontSize: FontSize.sm,
+    fontSize: 15,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textSecondary,
     textAlign: 'center',
-    marginTop: -Spacing[2],
+    lineHeight: 22,
+    paddingHorizontal: 32,
   },
-  suggestions: { width: '100%', gap: Spacing[2], marginTop: Spacing[2] },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
+  chipRow: {
+    flexGrow: 0,
+    marginTop: 4,
+  },
+  chip: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing[4],
-    paddingVertical: 14,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 100,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  rowText: {
-    flex: 1,
-    fontSize: FontSize.sm,
+  chipText: {
+    fontSize: 14,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textSecondary,
   },
-  rowArrow: {
-    fontSize: FontSize.md,
-    color: Colors.textMuted,
-    fontFamily: FontFamily.bodyMedium,
-  },
-  claudeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.rim,
-    marginTop: Spacing[2],
-  },
-  claudeBadgeText: {
-    fontSize: 10,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    letterSpacing: 1.5,
-  },
 });
-
-// ─── Input Bar ────────────────────────────────────────────────────────────────
-
-interface InputBarProps {
-  value: string;
-  onChange: (text: string) => void;
-  onSend: () => void;
-  onAttach: () => void;
-  disabled?: boolean;
-  inputRef: React.RefObject<TextInput | null>;
-}
-
-function InputBar({ value, onChange, onSend, onAttach, disabled, inputRef }: InputBarProps) {
-  const hasText = value.trim().length > 0;
-  const sendScale = useSharedValue(0);
-
-  useEffect(() => {
-    sendScale.value = withSpring(hasText ? 1 : 0, { damping: 14, stiffness: 280 });
-  }, [hasText]);
-
-  const sendBtnStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: sendScale.value }],
-    opacity: sendScale.value,
-  }));
-  const micBtnStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: interpolate(sendScale.value, [0, 1], [1, 0]) }],
-    opacity: interpolate(sendScale.value, [0, 1], [1, 0]),
-  }));
-
-  return (
-    <View style={inputStyles.bar}>
-      {/* Attach */}
-      <TouchableOpacity
-        onPress={onAttach}
-        style={inputStyles.iconBtn}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        disabled={disabled}
-      >
-        <PaperclipIcon />
-      </TouchableOpacity>
-
-      {/* Text input */}
-      <TextInput
-        ref={inputRef}
-        value={value}
-        onChangeText={onChange}
-        placeholder="Ask about your health..."
-        placeholderTextColor={Colors.textMuted}
-        multiline
-        numberOfLines={4}
-        style={inputStyles.input}
-        selectionColor={Colors.primary}
-        editable={!disabled}
-        returnKeyType="default"
-        blurOnSubmit={false}
-      />
-
-      {/* Send / Mic */}
-      <View style={inputStyles.sendContainer}>
-        <Animated.View style={[StyleSheet.absoluteFill, inputStyles.sendBtn, sendBtnStyle]}>
-          <TouchableOpacity
-            onPress={() => {
-              if (!hasText || disabled) return;
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              onSend();
-            }}
-            style={inputStyles.sendBtnInner}
-            activeOpacity={0.85}
-          >
-            <ArrowUpIcon />
-          </TouchableOpacity>
-        </Animated.View>
-        <Animated.View style={[StyleSheet.absoluteFill, inputStyles.micBtn, micBtnStyle]}>
-          <MicIcon />
-        </Animated.View>
-      </View>
-    </View>
-  );
-}
-
-const inputStyles = StyleSheet.create({
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: Spacing[2],
-    paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[3],
-    backgroundColor: Colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 14,
-    paddingTop: Platform.OS === 'ios' ? 10 : 8,
-    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textPrimary,
-    maxHeight: 100,
-  },
-  sendContainer: {
-    width: 36,
-    height: 36,
-    marginBottom: 2,
-  },
-  sendBtn: {
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  sendBtnInner: {
-    flex: 1,
-    backgroundColor: Colors.primary,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  micBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
-
 
 // ─── Chat Screen ──────────────────────────────────────────────────────────────
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
-  const {
-    currentConversation,
-    engineMode,
-    isAITyping,
-    addMessage,
-    updateMessage,
-    setEngineMode,
-    setTyping,
-    archiveCurrentConversation,
-    pendingChatContext,
-    setPendingChatContext,
-  } = useHealthStore();
-
-  const { canUseAI, incrementAIMessages } = useSubscriptionStore();
   const router = useRouter();
+  const { healthProfile, timeline } = useHealth();
+  const { isPro, incrementAIMessages, canUseAI } = useSubscriptionStore();
+  const { latestVitals } = useHealthKit();
 
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
-  const [pendingAttachment, setPendingAttachment] = useState<{
-    name: string; type: string; uri: string;
-  } | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [engineMode, setEngineMode] = useState<'rule' | 'ai'>('ai');
+  const [selectedSpecialist, setSelectedSpecialist] = useState<SpecialistRecommendation | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
-  const [specialistSheet, setSpecialistSheet] = useState<SpecialistRecommendation | null>(null);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
 
-  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const listRef = useRef<FlatList<ChatMessage | 'typing'>>(null);
   const inputRef = useRef<TextInput>(null);
 
-  // Pre-fill from pendingChatContext (set by insights/timeline "Ask AI")
-  useEffect(() => {
-    if (pendingChatContext) {
-      setInputText(pendingChatContext);
-      setPendingChatContext(null);
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
-  }, [pendingChatContext]);
+  const tabBarH = 49 + Math.max(insets.bottom, 0);
 
-  // Scroll to bottom whenever messages change
-  useEffect(() => {
-    if (currentConversation.length > 0) {
-      setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 80);
-    }
-  }, [currentConversation.length]);
-
-  // ── Engine mode switch ───────────────────────────────────────────────────
-  const handleModeSwitch = useCallback(
-    (next: EngineMode) => {
-      if (next === engineMode) return;
-      setEngineMode(next);
-      const sysMsg: ChatMessage = {
-        id: `sys-${Date.now()}`,
-        role: 'system',
-        content: `Switched to ${next === 'ai' ? 'AI Mode' : 'Rule Engine'}.`,
-        timestamp: new Date().toISOString(),
-      };
-      addMessage(sysMsg);
-    },
-    [engineMode, setEngineMode, addMessage]
-  );
-
-  // ── Attach handler ───────────────────────────────────────────────────────
-  const handleAttach = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'Upload Document', 'Take Photo', 'Choose from Library'],
-          cancelButtonIndex: 0,
-        },
-        async (idx) => {
-          if (idx === 1) await pickDocument();
-          if (idx === 2) await pickImage('camera');
-          if (idx === 3) await pickImage('library');
-        }
-      );
-    } else {
-      Alert.alert('Attach', 'Choose source', [
-        { text: 'Document', onPress: pickDocument },
-        { text: 'Camera', onPress: () => pickImage('camera') },
-        { text: 'Library', onPress: () => pickImage('library') },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
+  const addMessage = useCallback((msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    const newMsg: ChatMessage = {
+      ...msg,
+      id: `msg-${Date.now()}-${Math.random()}`,
+      timestamp: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, newMsg]);
+    return newMsg;
   }, []);
 
-  const pickDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
-      if (!result.canceled && result.assets[0]) {
-        const f = result.assets[0];
-        setPendingAttachment({ name: f.name ?? 'document', type: f.mimeType ?? 'application/pdf', uri: f.uri });
-      }
-    } catch {}
-  };
-
-  const pickImage = async (source: 'camera' | 'library') => {
-    try {
-      const fn = source === 'camera'
-        ? ImagePicker.launchCameraAsync
-        : ImagePicker.launchImageLibraryAsync;
-      const result = await fn({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
-      if (!result.canceled && result.assets[0]) {
-        const a = result.assets[0];
-        const name = a.fileName ?? `photo_${Date.now()}.jpg`;
-        setPendingAttachment({ name, type: 'image/jpeg', uri: a.uri });
-      }
-    } catch {}
-  };
-
-  // ── Send message ─────────────────────────────────────────────────────────
-  const handleSend = useCallback(async () => {
-    const text = inputText.trim();
-    if (!text) return;
-
-    // Free tier: 1 AI message per day
-    if (!canUseAI()) {
-      const limitMsg: ChatMessage = {
-        id: `sys-${Date.now()}`,
-        role: 'assistant',
-        content: "You've used your free AI message today. Upgrade to Pro for unlimited chat.",
-        timestamp: new Date().toISOString(),
-        metadata: { isProLimit: true },
-      };
-      addMessage(limitMsg);
-      return;
+  const scrollToBottom = useCallback(() => {
+    if (listRef.current && messages.length > 0) {
+      listRef.current.scrollToEnd({ animated: true });
     }
-    incrementAIMessages();
+  }, [messages.length]);
 
-    // Build user message
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      role: 'user',
-      content: text,
-      timestamp: new Date().toISOString(),
-      attachment: pendingAttachment ?? undefined,
-    };
-    addMessage(userMsg);
+  useEffect(() => {
+    if (messages.length > 0 || isTyping) {
+      setTimeout(scrollToBottom, 120);
+    }
+  }, [messages.length, isTyping]);
+
+  const updateMessage = useCallback((id: string, patch: Partial<ChatMessage & { isStreaming?: boolean; displayedContent?: string }>) => {
+    setMessages((prev) => prev.map((m) => m.id === id ? { ...m, ...patch } : m));
+  }, []);
+
+  const streamText = useCallback(async (msgId: string, fullText: string) => {
+    const CHAR_DELAY = 15;
+    let current = '';
+    for (let i = 0; i < fullText.length; i++) {
+      current += fullText[i];
+      updateMessage(msgId, { displayedContent: current } as any);
+      await new Promise((r) => setTimeout(r, CHAR_DELAY));
+    }
+    updateMessage(msgId, { isStreaming: false, displayedContent: fullText } as any);
+  }, [updateMessage]);
+
+  const sendMessage = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || isTyping) return;
+
     setInputText('');
-    setPendingAttachment(null);
-    track('ai_message_sent', { mode: engineMode });
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
 
-    // Show typing
-    setTyping(true);
+    const userMsg = addMessage({ role: 'user', content: trimmed });
+    setIsTyping(true);
 
-    // Determine delay: AI = 1200–1800ms random, Rule = 0
-    const delay = engineMode === 'ai'
-      ? 1200 + Math.random() * 600
-      : 0;
-
-    // Min typing display
-    const minTyping = 800;
-    const startTime = Date.now();
+    // Build last 10 messages for context (excluding the one we just added)
+    const contextMessages = [...messages, userMsg].slice(-10);
 
     try {
-      // Try real API
-      const { data } = await healthAskApi.ask({ question: text, mode: engineMode });
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, minTyping - elapsed);
-      await new Promise((r) => setTimeout(r, remaining + delay));
+      const aiResponse = await askHealthQuestion(
+        trimmed,
+        { ...(healthProfile ?? {}), latestVitals: latestVitals ?? undefined },
+        timeline ?? [],
+        engineMode,
+        contextMessages
+      );
 
-      setTyping(false);
-      const aiMsg: ChatMessage = {
-        id: `a-${Date.now()}`,
+      setIsTyping(false);
+
+      const aiMsg: ChatMessage & { isStreaming?: boolean; displayedContent?: string } = {
+        id: `msg-${Date.now()}-ai`,
+        timestamp: new Date().toISOString(),
         role: 'assistant',
-        content: data.answer,
-        timestamp: new Date().toISOString(),
-        confidence: data.confidence,
-        confidenceScore: data.confidence_score,
-        reasoning: data.reasoning,
-        disclaimer: data.disclaimer,
-        specialist: data.specialist_recommendation
-          ? {
-              type: data.specialist_recommendation.specialist_type,
-              reason: data.specialist_recommendation.reason,
-              urgency: data.specialist_recommendation.urgency,
-            }
-          : undefined,
-        reasoningExpanded: false,
-      };
-      addMessage(aiMsg);
-    } catch {
-      // Fallback to mock
-      const mockFn = engineMode === 'rule' ? mockRuleResponse : mockAIResponse;
-      const mock = mockFn(text);
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, minTyping - elapsed);
-      await new Promise((r) => setTimeout(r, remaining + delay));
+        content: aiResponse.answer,
+        confidence: aiResponse.confidence,
+        confidenceScore: aiResponse.confidenceScore,
+        reasoning: aiResponse.reasoning,
+        disclaimer: aiResponse.disclaimer,
+        specialist: aiResponse.specialist ?? undefined,
+        isStreaming: true,
+        displayedContent: '',
+      } as any;
 
-      setTyping(false);
-      const aiMsg: ChatMessage = {
-        id: `a-${Date.now()}`,
-        role: 'assistant',
-        content: mock.answer,
-        timestamp: new Date().toISOString(),
-        confidence: mock.confidence,
-        confidenceScore: mock.confidence_score,
-        reasoning: mock.reasoning,
-        disclaimer: mock.disclaimer,
-        specialist: mock.specialist_recommendation
-          ? {
-              type: mock.specialist_recommendation.specialist_type,
-              reason: mock.specialist_recommendation.reason,
-              urgency: mock.specialist_recommendation.urgency,
-            }
-          : undefined,
-        reasoningExpanded: false,
-      };
-      addMessage(aiMsg);
-    }
-  }, [inputText, pendingAttachment, engineMode, addMessage, setTyping]);
-
-  // ── Quick prompt ─────────────────────────────────────────────────────────
-  const handleQuickPrompt = useCallback((prompt: string) => {
-    setInputText(prompt);
-    setTimeout(() => inputRef.current?.focus(), 50);
-    // Auto-submit after a brief moment so it feels natural
-    setTimeout(async () => {
-      const userMsg: ChatMessage = {
-        id: `u-${Date.now()}`,
-        role: 'user',
-        content: prompt,
-        timestamp: new Date().toISOString(),
-      };
-      addMessage(userMsg);
-      setInputText('');
-      setTyping(true);
-
-      const delay = engineMode === 'ai' ? 1200 + Math.random() * 600 : 0;
-      await new Promise((r) => setTimeout(r, 800 + delay));
-
-      const mockFn = engineMode === 'rule' ? mockRuleResponse : mockAIResponse;
-      const mock = mockFn(prompt);
-      setTyping(false);
-      addMessage({
-        id: `a-${Date.now()}`,
-        role: 'assistant',
-        content: mock.answer,
-        timestamp: new Date().toISOString(),
-        confidence: mock.confidence,
-        confidenceScore: mock.confidence_score,
-        reasoning: mock.reasoning,
-        disclaimer: mock.disclaimer,
-        specialist: mock.specialist_recommendation
-          ? { type: mock.specialist_recommendation.specialist_type, reason: mock.specialist_recommendation.reason, urgency: mock.specialist_recommendation.urgency }
-          : undefined,
-        reasoningExpanded: false,
+      setMessages((prev) => {
+        const updated = [...prev, aiMsg];
+        // Auto-save conversation to Firestore (best-effort)
+        saveConversation(currentConversationId, updated)
+          .then((id) => {
+            if (!currentConversationId) setCurrentConversationId(id);
+          })
+          .catch(() => {});
+        return updated;
       });
-    }, 120);
-  }, [engineMode, addMessage, setTyping]);
+      hapticNotification(Haptics.NotificationFeedbackType.Success);
+      incrementAIMessages();
 
-  // ── Reasoning toggle ─────────────────────────────────────────────────────
-  const handleReasoningToggle = useCallback(
-    (id: string) => {
-      const msg = currentConversation.find((m) => m.id === id);
-      if (!msg) return;
-      updateMessage(id, { reasoningExpanded: !msg.reasoningExpanded });
-    },
-    [currentConversation, updateMessage]
-  );
+      await streamText(aiMsg.id, aiResponse.answer);
+    } catch {
+      setIsTyping(false);
+      showToast('AI unavailable. Using offline mode.', 'info');
+      addMessage({
+        role: 'assistant',
+        content: "I'm having trouble reaching the AI right now. Please try again or switch to Rule Engine mode for instant answers.",
+        confidence: 'low',
+        confidenceScore: 0,
+      });
+    }
+  }, [isTyping, engineMode, healthProfile, timeline, messages, currentConversationId, addMessage, incrementAIMessages, streamText]);
 
-  // ── Render ───────────────────────────────────────────────────────────────
-  const modeColor = engineMode === 'ai' ? Colors.primary : Colors.warning;
-  const isEmpty = currentConversation.length === 0 && !isAITyping;
+  const handleSend = useCallback(() => {
+    sendMessage(inputText);
+  }, [inputText, sendMessage]);
 
-  // Inverted list data: newest first so FlatList inverted shows newest at bottom
-  const listData = useMemo(
-    () => [...currentConversation].reverse(),
-    [currentConversation]
-  );
+  const handleSuggestion = useCallback((s: string) => {
+    sendMessage(s);
+  }, [sendMessage]);
 
-  const renderItem = useCallback(
-    ({ item }: { item: ChatMessage }) => (
+  const allItems = useMemo(() => {
+    const items: (ChatMessage | 'typing')[] = [...messages];
+    if (isTyping) items.push('typing');
+    return items;
+  }, [messages, isTyping]);
+
+  const renderItem = useCallback(({ item }: { item: ChatMessage | 'typing' }) => {
+    if (item === 'typing') {
+      return (
+        <Animated.View entering={FadeIn.duration(200)} style={{ marginBottom: 8 }}>
+          <TypingIndicator />
+        </Animated.View>
+      );
+    }
+    return (
       <MessageBubble
         message={item}
-        onSpecialistPress={(s) => setSpecialistSheet(s)}
-        onReasoningToggle={handleReasoningToggle}
+        onSpecialistPress={(s) => setSelectedSpecialist(s)}
       />
-    ),
-    [handleReasoningToggle]
-  );
+    );
+  }, []);
+
+  const hasText = inputText.trim().length > 0;
 
   return (
-    <View style={[screenStyles.root, { paddingTop: insets.top }]}>
-      {/* ── A. Header ──────────────────────────────────────────────────── */}
-      <View style={screenStyles.header}>
-        <View>
-          <Text style={screenStyles.headerTitle}>AI Assistant</Text>
-          <View style={screenStyles.modePillRow}>
-            <View style={[screenStyles.modePip, { backgroundColor: modeColor }]} />
-            <Text style={[screenStyles.modeLabel, { color: modeColor }]}>
-              {engineMode === 'ai' ? 'AI Mode' : 'Rule Engine'}
-            </Text>
-          </View>
+    <KeyboardAvoidingView
+      style={[styles.root, { backgroundColor: Colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <Text style={styles.headerTitle}>Chat</Text>
+        <View style={styles.headerRight}>
+          <View style={[styles.modeDot, { backgroundColor: engineMode === 'ai' ? Colors.primary : Colors.vital }]} />
+          <TouchableOpacity onPress={() => setHistoryVisible(true)} style={styles.historyBtn}>
+            <Text style={styles.historyText}>History</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          onPress={() => setHistoryVisible(true)}
-          style={screenStyles.historyBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <HistoryIcon />
-        </TouchableOpacity>
       </View>
 
-      {/* Engine cards */}
-      <EngineToggle mode={engineMode} onChange={handleModeSwitch} />
+      {/* ── Engine selector ─────────────────────────────────────────────── */}
+      <View style={styles.engineWrap}>
+        <EngineSelector mode={engineMode} onChange={setEngineMode} />
+      </View>
 
-      {/* ── B+C. Message list / Empty state ───────────────────────────── */}
-      <KeyboardAvoidingView
-        style={screenStyles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
-      >
-        {isEmpty ? (
-          <EmptyState onPromptSelect={handleQuickPrompt} />
-        ) : (
-          <FlatList
-            ref={listRef}
-            data={listData}
-            keyExtractor={(item) => item.id}
-            renderItem={renderItem}
-            inverted
-            contentContainerStyle={screenStyles.listContent}
-            showsVerticalScrollIndicator={false}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            removeClippedSubviews
-            maxToRenderPerBatch={10}
-            windowSize={10}
-            ListHeaderComponent={
-              isAITyping ? <TypingIndicator /> : null
-            }
-          />
-        )}
-
-        {/* Pending attachment preview */}
-        {pendingAttachment && (
-          <View style={screenStyles.pendingAttach}>
-            <DocumentIcon />
-            <Text style={screenStyles.pendingAttachName} numberOfLines={1}>
-              {pendingAttachment.name}
-            </Text>
-            <TouchableOpacity onPress={() => setPendingAttachment(null)}>
-              <Text style={screenStyles.pendingRemove}>✕</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ── E. Input bar ──────────────────────────────────────────────── */}
-        <View style={{ paddingBottom: insets.bottom }}>
-          <InputBar
-            value={inputText}
-            onChange={setInputText}
-            onSend={handleSend}
-            onAttach={handleAttach}
-            disabled={isAITyping}
-            inputRef={inputRef}
-          />
+      {/* ── Messages ────────────────────────────────────────────────────── */}
+      {allItems.length === 0 ? (
+        <View style={{ flex: 1 }}>
+          <EmptyState onSuggestion={handleSuggestion} />
         </View>
-      </KeyboardAvoidingView>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={allItems}
+          keyExtractor={(item, i) => (item === 'typing' ? 'typing' : item.id)}
+          renderItem={renderItem}
+          contentContainerStyle={[styles.listContent, { paddingBottom: tabBarH + 80 }]}
+          showsVerticalScrollIndicator={false}
+          onLayout={scrollToBottom}
+        />
+      )}
 
-      {/* ── Sheets ────────────────────────────────────────────────────── */}
+      {/* ── Input bar ───────────────────────────────────────────────────── */}
+      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        {/* + attach button */}
+        <TouchableOpacity style={styles.attachBtn} activeOpacity={0.75}>
+          <PlusIcon color={Colors.textSecondary} />
+        </TouchableOpacity>
+
+        {/* Input field */}
+        <TextInput
+          ref={inputRef}
+          style={styles.input}
+          placeholder="Message…"
+          placeholderTextColor="rgba(255,255,255,0.25)"
+          value={inputText}
+          onChangeText={setInputText}
+          onSubmitEditing={handleSend}
+          returnKeyType="send"
+          multiline
+          maxLength={2000}
+          selectionColor="#4C8DFF"
+          keyboardAppearance="dark"
+        />
+
+        {/* Send / Mic button */}
+        {hasText ? (
+          <TouchableOpacity
+            style={[styles.sendBtn, { backgroundColor: Colors.primary }]}
+            onPress={handleSend}
+            activeOpacity={0.82}
+          >
+            <ArrowUpIcon color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.micBtn} activeOpacity={0.75}>
+            <MicIcon color={Colors.textSecondary} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {selectedSpecialist && (
+        <SpecialistDetailSheet
+          specialist={selectedSpecialist}
+          visible
+          onClose={() => setSelectedSpecialist(null)}
+        />
+      )}
       <ConversationHistorySheet
         visible={historyVisible}
         onClose={() => setHistoryVisible(false)}
       />
-      <SpecialistDetailSheet
-        visible={specialistSheet !== null}
-        specialist={specialistSheet}
-        onClose={() => setSpecialistSheet(null)}
-      />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
-const screenStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-  flex: { flex: 1 },
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing[4],
-    paddingTop: Spacing[3],
-    paddingBottom: Spacing[3],
+    paddingHorizontal: 20,
+    paddingBottom: 10,
   },
   headerTitle: {
-    fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.displayBold,
+    fontSize: 34,
+    fontFamily: FontFamily.bodyBold,
+    fontWeight: '700',
     color: Colors.textPrimary,
-    lineHeight: 30,
+    letterSpacing: -0.5,
   },
-  modePillRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-  modePip: { width: 6, height: 6, borderRadius: 3 },
-  modeLabel: { fontSize: FontSize.xs, fontFamily: FontFamily.bodyMedium },
-  historyBtn: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: BorderRadius.md,
-  },
-  listContent: {
-    paddingTop: Spacing[3],
-    paddingBottom: Spacing[2],
-    flexGrow: 1,
-  },
-  pendingAttach: {
+  headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginHorizontal: Spacing[4],
-    marginBottom: 4,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: 8,
   },
-  pendingAttachName: {
-    flex: 1,
-    fontSize: FontSize.sm,
+  modeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  historyBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  historyText: {
+    fontSize: 13,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textSecondary,
   },
-  pendingRemove: {
-    fontSize: FontSize.sm,
-    color: Colors.textMuted,
-    fontFamily: FontFamily.bodyMedium,
+  engineWrap: {
+    marginBottom: 8,
+  },
+  listContent: {
+    paddingTop: 12,
+    gap: 0,
+  },
+  inputBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingVertical: 8,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(0,0,0,0.92)',
+  },
+  attachBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 5,
+  },
+  input: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingTop: 9,
+    paddingBottom: 9,
+    fontSize: 15,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textPrimary,
+    minHeight: 38,
+    maxHeight: 120,
+    lineHeight: 20,
+  },
+  sendBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 5,
+  },
+  micBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
 });

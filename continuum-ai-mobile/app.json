@@ -23,8 +23,8 @@
         "NSCameraUsageDescription": "Continuum uses your camera to capture health documents and lab reports.",
         "NSPhotoLibraryUsageDescription": "Continuum accesses your photos to upload health documents and reports.",
         "NSMicrophoneUsageDescription": "Continuum may use your microphone for voice input features.",
-        "NSHealthShareUsageDescription": "Continuum reads health data to provide personalized insights.",
-        "NSHealthUpdateUsageDescription": "Continuum saves health data to help track your progress.",
+        "NSHealthShareUsageDescription": "Continuum reads your health data to provide personalized AI-powered health insights and track your progress over time.",
+        "NSHealthUpdateUsageDescription": "Continuum saves health notes and summaries to your Health app.",
         "NSPhotoLibraryAddUsageDescription": "Continuum saves your Health Report Card to your photo library.",
         "UIBackgroundModes": ["fetch", "remote-notification"]
       }
@@ -69,12 +69,6 @@
       "expo-router",
       "expo-secure-store",
       "expo-font",
-      [
-        "react-native-purchases",
-        {
-          "androidApiKey": "YOUR_ANDROID_KEY"
-        }
-      ],
       [
         "expo-notifications",
         {

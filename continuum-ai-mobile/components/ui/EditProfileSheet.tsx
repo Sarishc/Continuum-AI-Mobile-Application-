@@ -27,10 +27,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { healthApi } from '../../api/health';
 import { useHealthStore } from '../../store/healthStore';
+import { useHealth } from '../../hooks/useHealth';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { BorderRadius, Spacing } from '../../constants/theme';
-import type { HealthProfile, Medication } from '../../types';
+import { showToast } from '../../store/toastStore';
+import type { Medication } from '../../types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -303,26 +305,32 @@ interface EditProfileSheetProps {
 }
 
 export function EditProfileSheet({ visible, onClose }: EditProfileSheetProps) {
-  const { healthProfile, setProfile } = useHealthStore();
+  const { healthProfile, updateProfile } = useHealth();
   const translateY = useSharedValue(SHEET_HEIGHT);
 
   // Local form state
-  const [name, setName] = useState('');
-  const [dob, setDob] = useState('');
+  const [age, setAge] = useState('');
   const [sex, setSex] = useState('');
   const [conditions, setConditions] = useState<string[]>([]);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [allergies, setAllergies] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // Seed from store when opening
+  // Seed from Firestore profile when opening
   useEffect(() => {
     if (visible && healthProfile) {
       setConditions(healthProfile.conditions ?? []);
-      setMedications(healthProfile.medications ?? []);
       setAllergies(healthProfile.allergies ?? []);
-      setDob(healthProfile.dateOfBirth ?? '');
-      setSex(healthProfile.biologicalSex ?? '');
+      setSex(healthProfile.sex ?? '');
+      setAge(healthProfile.age != null ? String(healthProfile.age) : '');
+      // Map Firestore medications (no id field) to local Medication type
+      const meds = (healthProfile.medications ?? []).map((m, i) => ({
+        id: `m-${i}`,
+        name: m.name,
+        dosage: m.dosage,
+        frequency: m.frequency,
+      }));
+      setMedications(meds);
     }
   }, [visible, healthProfile]);
 
@@ -374,23 +382,24 @@ export function EditProfileSheet({ visible, onClose }: EditProfileSheetProps) {
 
   const handleSave = async () => {
     setSaving(true);
-    const updated: Partial<HealthProfile> = {
-      conditions,
-      medications,
-      allergies,
-      dateOfBirth: dob || undefined,
-      biologicalSex: (sex as HealthProfile['biologicalSex']) || undefined,
-      updatedAt: new Date().toISOString(),
-    };
     try {
-      const { data } = await healthApi.updateProfile(updated);
-      setProfile({ ...healthProfile!, ...data });
+      await updateProfile({
+        conditions,
+        allergies,
+        age: age ? parseInt(age, 10) : null,
+        sex: sex || null,
+        medications: medications.map(({ name, dosage, frequency }) => ({
+          name,
+          dosage,
+          frequency,
+        })),
+      });
+      showToast('Profile updated!', 'success');
+      handleClose();
     } catch {
-      // Optimistic local update on API failure
-      setProfile({ ...healthProfile!, ...updated });
+      showToast('Failed to save. Try again.', 'error');
     } finally {
       setSaving(false);
-      handleClose();
     }
   };
 
@@ -417,13 +426,15 @@ export function EditProfileSheet({ visible, onClose }: EditProfileSheetProps) {
           {/* Personal Info */}
           <SheetSection label="Personal Info" />
           <View style={sheetStyles.field}>
-            <Text style={sheetStyles.fieldLabel}>Date of Birth</Text>
+            <Text style={sheetStyles.fieldLabel}>Age</Text>
             <TextInput
-              value={dob}
-              onChangeText={setDob}
-              placeholder="MM/DD/YYYY"
+              value={age}
+              onChangeText={setAge}
+              placeholder="e.g. 42"
               placeholderTextColor={Colors.textMuted}
+              keyboardType="number-pad"
               style={sheetStyles.input}
+              maxLength={3}
             />
           </View>
           <View style={sheetStyles.field}>

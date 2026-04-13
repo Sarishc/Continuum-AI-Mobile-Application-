@@ -15,8 +15,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
+import { useAuthStore } from '../../store/authStore';
 import { validateCode, applyReferralCode } from '../../services/referral';
 import { showToast } from '../../store/toastStore';
 import { track } from '../../services/analytics';
@@ -180,7 +182,8 @@ const inputStyles = StyleSheet.create({
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { signup, isLoading, error, clearError } = useAuth();
+  const { isLoading, error, clearError } = useAuth();
+  const { signup } = useAuthStore();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -209,6 +212,12 @@ export default function SignupScreen() {
   const handleSignup = async () => {
     setLocalError(null);
     clearError();
+
+    // Client-side validation
+    if (name.trim().length < 2) {
+      setLocalError('Name must be at least 2 characters.');
+      return;
+    }
     if (password !== confirmPassword) {
       setLocalError('Passwords do not match.');
       return;
@@ -217,13 +226,17 @@ export default function SignupScreen() {
       setLocalError('Password must be at least 8 characters.');
       return;
     }
-    const signupSucceeded = await signup({ name: name.trim(), email: email.trim(), password });
+
+    // Firebase signup
+    const signupSucceeded = await signup(email.trim(), password, name.trim());
     if (signupSucceeded && referralStatus === 'valid' && referralCode.trim()) {
       await applyReferralCode(referralCode.trim());
       track('referral_applied');
       showToast('Welcome! You have 7 days of Pro free 🎉', 'success');
+      router.replace('/onboarding');
     } else if (signupSucceeded) {
       track('signup_completed');
+      router.replace('/onboarding');
     }
   };
 
@@ -305,6 +318,38 @@ export default function SignupScreen() {
               returnKeyType="next"
               onSubmitEditing={() => confirmRef.current?.focus()}
             />
+
+            {/* Password strength indicator */}
+            {password.length > 0 && (() => {
+              let strength = 0;
+              if (password.length >= 8) strength++;
+              if (/[A-Z]/.test(password)) strength++;
+              if (/[0-9]/.test(password)) strength++;
+              if (/[^A-Za-z0-9]/.test(password)) strength++;
+              const labels = ['Weak', 'Fair', 'Good', 'Strong'];
+              const colors = ['#FF453A', '#FF9F0A', '#FFD60A', '#30D158'];
+              return (
+                <View style={{ gap: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 4 }}>
+                    {[0, 1, 2, 3].map((i) => (
+                      <View
+                        key={i}
+                        style={{
+                          flex: 1,
+                          height: 3,
+                          borderRadius: 3,
+                          backgroundColor: i < strength ? colors[strength - 1] : 'rgba(255,255,255,0.10)',
+                        }}
+                      />
+                    ))}
+                  </View>
+                  <Text style={{ fontSize: 12, color: colors[strength - 1] ?? Colors.textMuted, fontFamily: FontFamily.bodyMedium }}>
+                    {labels[strength - 1] ?? 'Too short'}
+                  </Text>
+                </View>
+              );
+            })()}
+
             <FloatingInput
               inputRef={confirmRef}
               label="Confirm password"
@@ -402,7 +447,7 @@ export default function SignupScreen() {
             <Text style={styles.footerText}>Already have an account? </Text>
             <TouchableOpacity
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                hapticImpact(Haptics.ImpactFeedbackStyle.Light);
                 router.back();
               }}
               activeOpacity={0.7}

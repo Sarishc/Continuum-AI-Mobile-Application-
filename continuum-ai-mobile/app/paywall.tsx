@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import { PurchasesPackage } from 'react-native-purchases';
 import { AnimatedBackground } from '../components/ui/AnimatedBackground';
 import { useSubscriptionStore } from '../store/subscriptionStore';
@@ -138,7 +139,7 @@ export default function PaywallScreen() {
       showToast('Configure RevenueCat offerings to enable purchases.', 'info');
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Medium);
     setPurchasing(true);
     try {
       track('pro_purchase_started', { plan: selectedPlan });
@@ -159,7 +160,7 @@ export default function PaywallScreen() {
   };
 
   const handleRestore = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     setRestoring(true);
     try {
       const info = await restorePurchases();
@@ -224,7 +225,7 @@ export default function PaywallScreen() {
             billing="Billed monthly"
             selected={selectedPlan === 'monthly'}
             onSelect={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              hapticImpact(Haptics.ImpactFeedbackStyle.Light);
               setSelectedPlan('monthly');
             }}
           />
@@ -236,7 +237,7 @@ export default function PaywallScreen() {
             saving="Save 33%"
             selected={selectedPlan === 'annual'}
             onSelect={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              hapticImpact(Haptics.ImpactFeedbackStyle.Light);
               setSelectedPlan('annual');
             }}
           />

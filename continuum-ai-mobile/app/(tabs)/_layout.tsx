@@ -13,9 +13,11 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
       <Tabs.Screen name="chat" options={{ title: 'Chat' }} />
-      <Tabs.Screen name="timeline" options={{ title: 'Timeline' }} />
+      <Tabs.Screen name="medications" options={{ title: 'Meds' }} />
       <Tabs.Screen name="insights" options={{ title: 'Insights' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+      {/* Timeline kept as a screen but not in the tab bar */}
+      <Tabs.Screen name="timeline" options={{ href: null, title: 'Timeline' }} />
     </Tabs>
   );
 }

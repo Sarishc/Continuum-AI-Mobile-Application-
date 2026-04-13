@@ -1,35 +1,43 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, subDays } from 'date-fns';
-import { useHealthStore } from '../store/healthStore';
-import { healthApi } from '../api/health';
-import type { HealthEntry, HealthProfile, Insight } from '../types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuthStore } from '../store/authStore';
+import { useDemoStore } from '../store/demoStore';
+import {
+  getHealthProfile,
+  updateHealthProfile,
+  getHealthEntries,
+  addHealthEntry,
+  deleteHealthEntry,
+  subscribeToHealthEntries,
+  getHealthScore,
+  addInsight,
+  type FirestoreHealthProfile,
+  type FirestoreHealthEntry,
+} from '../services/firestoreService';
+import {
+  DEMO_HEALTH_PROFILE,
+  DEMO_ENTRIES,
+  DEMO_HEALTH_SCORE,
+} from '../constants/demoData';
 
-// ─── Health score calculation ─────────────────────────────────────────────────
-
-function calculateHealthScore(insights: Insight[]): number {
-  let score = 100;
-  const criticalCount = insights.filter((i) => i.severity === 'critical' && !i.dismissed).length;
-  const highCount = insights.filter((i) => i.severity === 'high' && !i.dismissed).length;
-  const mediumCount = insights.filter((i) => i.severity === 'moderate' && !i.dismissed).length;
-  score -= criticalCount * 20;
-  score -= highCount * 10;
-  score -= mediumCount * 5;
-  return Math.max(10, Math.min(100, score));
-}
+const INSIGHT_GEN_KEY = 'last_insight_gen_date';
 
 // ─── Streak calculation ───────────────────────────────────────────────────────
 
-export function calculateStreak(entries: HealthEntry[]): number {
+export function calculateStreak(entries: { createdAt: string }[]): number {
   if (!entries.length) return 0;
-  const dates = [...new Set(
-    entries.map((e) => format(new Date(e.recordedAt), 'yyyy-MM-dd'))
-  )].sort().reverse();
+  const { format, subDays } = require('date-fns');
+  const dates = [
+    ...new Set(entries.map((e) => format(new Date(e.createdAt), 'yyyy-MM-dd'))),
+  ]
+    .sort()
+    .reverse();
   if (!dates.length) return 0;
   const today = format(new Date(), 'yyyy-MM-dd');
   const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
   if (dates[0] !== today && dates[0] !== yesterday) return 0;
   let streak = 0;
-  let checkDate = dates[0];
+  let checkDate = dates[0] as string;
   for (const date of dates) {
     if (date === checkDate) {
       streak++;
@@ -39,244 +47,172 @@ export function calculateStreak(entries: HealthEntry[]): number {
   return streak;
 }
 
-const now = Date.now();
+// ─── Insight generation (once per day) ───────────────────────────────────────
 
-// ─── Mock data (used when API is unreachable) ─────────────────────────────────
+async function hasGeneratedInsightsToday(): Promise<boolean> {
+  try {
+    const stored = await AsyncStorage.getItem(INSIGHT_GEN_KEY);
+    if (!stored) return false;
+    const lastDate = new Date(stored).toDateString();
+    return lastDate === new Date().toDateString();
+  } catch {
+    return false;
+  }
+}
 
-const MOCK_PROFILE: HealthProfile = {
-  userId: 'mock-user',
-  conditions: ['Hypertension', 'Type 2 Diabetes'],
-  medications: [
-    { id: 'm1', name: 'Metformin', dosage: '500mg', frequency: 'Twice daily', startDate: '2024-01-15' },
-    { id: 'm2', name: 'Lisinopril', dosage: '10mg', frequency: 'Once daily', startDate: '2024-03-01' },
-  ],
-  allergies: ['Penicillin'],
-  updatedAt: new Date().toISOString(),
-};
+async function markInsightsGeneratedToday(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(INSIGHT_GEN_KEY, new Date().toISOString());
+  } catch {}
+}
 
-const day = (d: number) => new Date(now - d * 24 * 60 * 60 * 1000).toISOString();
-
-const MOCK_TIMELINE: HealthEntry[] = [
-  {
-    id: 't1',
-    userId: 'mock-user',
-    type: 'lab_result',
-    title: 'HbA1c Blood Panel',
-    description: 'Fasting glucose 118 mg/dL, HbA1c 6.8% — above target range.',
-    severity: 'high',
-    value: 6.8,
-    unit: '%',
-    tags: ['glucose', 'diabetes'],
-    attachments: [],
-    structuredData: {
-      summary: 'HbA1c elevated at 6.8%, consistent with pre-diabetic range. Fasting glucose borderline at 118 mg/dL. Recommend dietary review and follow-up in 3 months.',
-      conditions: ['Pre-diabetes'],
-      lab_values: { 'HbA1c': '6.8%', 'Fasting Glucose': '118 mg/dL', 'eGFR': '92 mL/min' },
-      risk_flags: ['HbA1c above normal threshold (>6.4%)', 'Fasting glucose borderline elevated'],
-      source_file: 'lab_results_panel_q1.pdf',
-    },
-    recordedAt: day(0),
-    createdAt: day(0),
-  },
-  {
-    id: 't2',
-    userId: 'mock-user',
-    type: 'symptom',
-    title: 'Frequent Urination & Thirst',
-    description: 'Classic symptoms associated with elevated blood glucose.',
-    severity: 'moderate',
-    tags: ['urination', 'thirst', 'fatigue'],
-    attachments: [],
-    structuredData: {
-      summary: 'Patient reports frequent urination, increased thirst, and persistent fatigue over the past 3 days. Symptoms consistent with hyperglycaemia.',
-      symptoms: ['Frequent urination', 'Increased thirst', 'Fatigue', 'Blurred vision'],
-      risk_flags: [],
-    },
-    recordedAt: day(1),
-    createdAt: day(1),
-  },
-  {
-    id: 't3',
-    userId: 'mock-user',
-    type: 'lab_result',
-    title: 'Annual Physical Report',
-    description: 'Annual physical examination. BP 138/88 mmHg.',
-    severity: 'moderate',
-    value: '138/88',
-    unit: 'mmHg',
-    tags: ['blood-pressure', 'hypertension', 'annual'],
-    attachments: [],
-    structuredData: {
-      summary: 'Annual physical examination report. Blood pressure 138/88 mmHg consistent with Stage 1 hypertension. BMI 27.4 (overweight). All other values within normal limits.',
-      conditions: ['Hypertension', 'Pre-diabetes'],
-      medications: [
-        { name: 'Metformin', dosage: '500mg', frequency: 'twice daily' },
-        { name: 'Lisinopril', dosage: '10mg', frequency: 'once daily' },
-      ],
-      lab_values: { 'Blood Pressure': '138/88 mmHg', 'BMI': '27.4', 'Heart Rate': '74 bpm' },
-      risk_flags: ['Stage 1 hypertension', 'BMI in overweight range'],
-      source_file: 'annual_physical_2026.pdf',
-    },
-    recordedAt: day(3),
-    createdAt: day(3),
-  },
-  {
-    id: 't4',
-    userId: 'mock-user',
-    type: 'note',
-    title: 'Started Daily Walking Routine',
-    description: 'Started new walking routine — 20 minutes daily.',
-    severity: 'low',
-    tags: ['exercise', 'lifestyle'],
-    attachments: [],
-    structuredData: {
-      summary: 'Started new walking routine — 20 minutes daily after dinner. Feeling more energetic after first week. Plan to increase to 30 minutes next month.',
-      risk_flags: [],
-    },
-    recordedAt: day(7),
-    createdAt: day(7),
-  },
-  {
-    id: 't5',
-    userId: 'mock-user',
-    type: 'lab_result',
-    title: 'Lipid Panel',
-    description: 'Total cholesterol 204 mg/dL, LDL borderline high.',
-    severity: 'moderate',
-    tags: ['cholesterol', 'lipids'],
-    attachments: [],
-    structuredData: {
-      summary: 'Lipid panel shows borderline high LDL cholesterol at 128 mg/dL. HDL satisfactory at 52 mg/dL. Total cholesterol 204 mg/dL — borderline high. Dietary modifications recommended.',
-      lab_values: {
-        'Total Cholesterol': '204 mg/dL',
-        'LDL': '128 mg/dL',
-        'HDL': '52 mg/dL',
-        'Triglycerides': '118 mg/dL',
-      },
-      risk_flags: ['LDL borderline high (>120 mg/dL)', 'Total cholesterol borderline high'],
-      source_file: 'lipid_panel_march.pdf',
-    },
-    recordedAt: day(14),
-    createdAt: day(14),
-  },
-  {
-    id: 't6',
-    userId: 'mock-user',
-    type: 'appointment',
-    title: 'Seasonal Allergy Follow-up',
-    description: 'Follow-up for seasonal allergies. Symptoms well controlled.',
-    severity: 'low',
-    tags: ['allergy', 'follow-up'],
-    attachments: [],
-    structuredData: {
-      summary: 'Follow-up visit for seasonal allergies. Symptoms well controlled on current Cetirizine regimen. No changes required. Next review in 6 months.',
-      conditions: ['Seasonal allergies'],
-      medications: [
-        { name: 'Cetirizine', dosage: '10mg', frequency: 'as needed' },
-      ],
-      risk_flags: [],
-    },
-    recordedAt: day(35),
-    createdAt: day(35),
-  },
-];
-
-const MOCK_SCORE = 72;
+async function generateFreshInsights(
+  profile: FirestoreHealthProfile,
+  entries: FirestoreHealthEntry[]
+): Promise<void> {
+  try {
+    const { generateInsights } = await import('../services/aiService');
+    const newInsights = await generateInsights(profile, entries);
+    if (newInsights.length > 0) {
+      await Promise.all(newInsights.map((i) => addInsight(i)));
+      await markInsightsGeneratedToday();
+    }
+  } catch {
+    // Fail silently — insights are nice-to-have, never crash-worthy
+  }
+}
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useHealth() {
-  const queryClient = useQueryClient();
-  const {
-    setProfile,
-    setTimeline,
-    addEntry,
-    setHealthScore,
-    healthProfile,
-    timeline,
-    healthScore,
-    insights,
-  } = useHealthStore();
+  const { user, isAuthenticated } = useAuthStore();
+  const { isDemoMode } = useDemoStore();
 
-  const profileQuery = useQuery({
-    queryKey: ['health', 'profile'],
-    queryFn: async () => {
+  const [healthProfile, setHealthProfile] = useState<FirestoreHealthProfile | null>(null);
+  const [timeline, setTimeline] = useState<FirestoreHealthEntry[]>([]);
+  const [healthScore, setHealthScore] = useState<number>(72);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefetching, setIsRefetching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Demo mode — return mock data immediately, no Firestore calls
+  if (isDemoMode) {
+    return {
+      healthProfile: DEMO_HEALTH_PROFILE,
+      timeline: DEMO_ENTRIES,
+      healthScore: DEMO_HEALTH_SCORE,
+      isLoading: false,
+      isRefetching: false,
+      error: null,
+      refetchAll: () => {},
+      createEntry: async () => 'demo',
+      createEntryAsync: async () => 'demo',
+      removeEntry: async () => {},
+      updateProfile: async () => {},
+    };
+  }
+
+  const loadAllData = useCallback(async () => {
+    try {
+      const [profile, entries, score] = await Promise.all([
+        getHealthProfile(),
+        getHealthEntries(),
+        getHealthScore(),
+      ]);
+      setHealthProfile(profile);
+      setTimeline(entries);
+      setHealthScore(score);
+
+      // Auto-generate insights once per day when user has data
+      if (entries.length > 0) {
+        hasGeneratedInsightsToday().then((alreadyDone) => {
+          if (!alreadyDone) {
+            generateFreshInsights(profile, entries);
+          }
+        });
+      }
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to load health data');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      setIsLoading(false);
+      return;
+    }
+
+    loadAllData();
+
+    const unsubscribe = subscribeToHealthEntries((entries) => {
+      setTimeline(entries);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, user?.id]);
+
+  const refetchAll = useCallback(async () => {
+    setIsRefetching(true);
+    await loadAllData();
+    setIsRefetching(false);
+  }, [loadAllData]);
+
+  const createEntry = useCallback(
+    async (entry: {
+      entryType: string;
+      title: string;
+      rawText: string;
+      structuredData: object;
+      sourceFile?: string | null;
+    }) => {
       try {
-        const { data } = await healthApi.getProfile();
-        setProfile(data);
-        return data;
-      } catch {
-        // API unreachable — fall back to mock
-        setProfile(MOCK_PROFILE);
-        return MOCK_PROFILE;
+        const id = await addHealthEntry(entry);
+        const newScore = await getHealthScore();
+        setHealthScore(newScore);
+        return id;
+      } catch (err: any) {
+        setError(err.message ?? 'Failed to save entry');
+        throw err;
       }
     },
-  });
+    []
+  );
 
-  const timelineQuery = useQuery({
-    queryKey: ['health', 'timeline'],
-    queryFn: async () => {
+  const removeEntry = useCallback(async (entryId: string) => {
+    try {
+      await deleteHealthEntry(entryId);
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to delete entry');
+      throw err;
+    }
+  }, []);
+
+  const updateProfile = useCallback(
+    async (data: Partial<Omit<FirestoreHealthProfile, 'userId' | 'createdAt' | 'updatedAt'>>) => {
       try {
-        const { data } = await healthApi.getTimeline({ limit: 50 });
-        setTimeline(data.data);
-        return data.data;
-      } catch {
-        setTimeline(MOCK_TIMELINE);
-        return MOCK_TIMELINE;
+        await updateHealthProfile(data);
+        setHealthProfile((prev) => (prev ? { ...prev, ...data } : prev));
+      } catch (err: any) {
+        setError(err.message ?? 'Failed to update profile');
+        throw err;
       }
     },
-  });
-
-  const scoreQuery = useQuery({
-    queryKey: ['health', 'score'],
-    queryFn: async () => {
-      try {
-        const { data } = await healthApi.getHealthScore();
-        setHealthScore(data.score);
-        return data;
-      } catch {
-        // Calculate score from insights when API unavailable
-        const calculated = calculateHealthScore(insights.length > 0 ? insights : []);
-        const score = insights.length > 0 ? calculated : MOCK_SCORE;
-        setHealthScore(score);
-        return { score, breakdown: {} };
-      }
-    },
-  });
-
-  const createEntryMutation = useMutation({
-    mutationFn: (entry: Omit<HealthEntry, 'id' | 'userId' | 'createdAt'>) =>
-      healthApi.createEntry(entry),
-    onSuccess: ({ data }) => {
-      addEntry(data);
-      queryClient.invalidateQueries({ queryKey: ['health', 'timeline'] });
-    },
-    onError: (_err, entry) => {
-      // Offline fallback — add locally with a temp ID
-      const localEntry: HealthEntry = {
-        ...entry,
-        id: `local-${Date.now()}`,
-        userId: 'local',
-        createdAt: new Date().toISOString(),
-      };
-      addEntry(localEntry);
-    },
-  });
-
-  const refetchAll = () => {
-    profileQuery.refetch();
-    timelineQuery.refetch();
-    scoreQuery.refetch();
-  };
+    []
+  );
 
   return {
     healthProfile,
     timeline,
     healthScore,
-    isLoading: profileQuery.isLoading || timelineQuery.isLoading || scoreQuery.isLoading,
-    isRefetching: profileQuery.isRefetching || timelineQuery.isRefetching,
-    createEntry: createEntryMutation.mutateAsync,
-    createEntryAsync: createEntryMutation.mutateAsync,
+    isLoading,
+    isRefetching,
+    error,
     refetchAll,
+    createEntry,
+    createEntryAsync: createEntry,
+    removeEntry,
+    updateProfile,
   };
 }

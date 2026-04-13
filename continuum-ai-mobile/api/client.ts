@@ -13,81 +13,25 @@ export const apiClient = axios.create({
   },
 });
 
-// ─── Request interceptor: attach Bearer token ─────────────────────────────────
+// ─── Request interceptor: attach user ID header ───────────────────────────────
+// Firebase manages token refresh internally — we pass the user ID for context.
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = useAuthStore.getState().accessToken;
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const user = useAuthStore.getState().user;
+  if (user?.id && config.headers) {
+    config.headers['X-User-Id'] = user.id;
   }
   return config;
 });
 
-// ─── Response interceptor: handle 401 / refresh ──────────────────────────────
-let isRefreshing = false;
-let refreshQueue: Array<(token: string) => void> = [];
-
-/** Bare axios instance — never intercepted, avoids refresh loop */
-const _rawAxios = axios.create({
-  baseURL: API_URL,
-  timeout: 15_000,
-  headers: { 'Content-Type': 'application/json' },
-});
-
+// ─── Response interceptor: sign out on hard 401 ──────────────────────────────
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & {
-      _retry?: boolean;
-    };
-
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        return new Promise((resolve) => {
-          refreshQueue.push((token: string) => {
-            if (originalRequest.headers) {
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-            }
-            resolve(apiClient(originalRequest));
-          });
-        });
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      const store = useAuthStore.getState();
-      const currentRefreshToken = store.refreshToken;
-
-      try {
-        if (!currentRefreshToken) throw new Error('No refresh token');
-
-        const resp = await _rawAxios.post<{
-          access_token: string;
-          refresh_token: string;
-        }>('/auth/refresh', { refresh_token: currentRefreshToken });
-
-        const newAccess = resp.data.access_token;
-        const newRefresh = resp.data.refresh_token;
-
-        await store.setTokens(newAccess, newRefresh);
-
-        refreshQueue.forEach((cb) => cb(newAccess));
-        refreshQueue = [];
-
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-        }
-        return apiClient(originalRequest);
-      } catch {
-        refreshQueue.forEach((cb) => cb(''));
-        refreshQueue = [];
-        await useAuthStore.getState().logout();
-        return Promise.reject(error);
-      } finally {
-        isRefreshing = false;
-      }
+    if (error.response?.status === 401) {
+      // Firebase handles token refresh automatically.
+      // A hard 401 means the session is truly expired — sign out.
+      await useAuthStore.getState().logout();
     }
-
     return Promise.reject(error);
   }
 );

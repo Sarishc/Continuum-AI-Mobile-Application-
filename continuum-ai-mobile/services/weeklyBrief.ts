@@ -1,6 +1,14 @@
 import apiClient from '../api/client';
+import { analyzeLocalTrends } from './predictionEngine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface TrendSummary {
+  improving: number;
+  worsening: number;
+  stable: number;
+  topTrend: ReturnType<typeof analyzeLocalTrends>[0] | null;
+}
 
 export interface BriefImprovement {
   title: string;
@@ -28,6 +36,7 @@ export interface WeeklyBriefData {
   actionableTip: string;
   nextSteps: string[];
   generatedAt: string;
+  trendSummary?: TrendSummary;
 }
 
 // ─── Fetch from backend ───────────────────────────────────────────────────────
@@ -97,5 +106,22 @@ export function getMockWeeklyBrief(): WeeklyBriefData {
       "Continue 30-minute post-dinner walks — they're working",
     ],
     generatedAt: new Date().toISOString(),
+    trendSummary: {
+      improving: 3,
+      worsening: 0,
+      stable: 1,
+      topTrend: {
+        metric: 'Blood Glucose',
+        trend: 'improving',
+        changePercent: -15.2,
+        values: [126, 118, 112, 104],
+        dates: [
+          new Date(Date.now() - 42 * 86_400_000).toISOString(),
+          new Date(Date.now() - 28 * 86_400_000).toISOString(),
+          new Date(Date.now() - 14 * 86_400_000).toISOString(),
+          new Date(Date.now()).toISOString(),
+        ],
+      },
+    },
   };
 }

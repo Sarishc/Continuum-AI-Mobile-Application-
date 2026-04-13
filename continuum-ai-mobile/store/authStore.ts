@@ -1,83 +1,94 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
-import type { User } from '../types';
+import { signIn, signUp, signOut, AuthUser } from '../services/authService';
 
-const SECURE_KEY_TOKEN = 'continuum_access_token';
-const SECURE_KEY_REFRESH = 'continuum_refresh_token';
-const SECURE_KEY_USER = 'continuum_user';
-const SECURE_KEY_ONBOARDING = 'onboarding_complete';
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AuthState {
-  user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
+  /** true until Firebase reports initial auth state (replaces old hydrate()) */
   isHydrated: boolean;
+  isLoading: boolean;
+  error: string | null;
   onboardingComplete: boolean;
 
-  login: (accessToken: string, user: User, refreshToken?: string) => Promise<void>;
+  // Auth actions
+  login: (email: string, password: string) => Promise<boolean>;
+  signup: (email: string, password: string, name: string) => Promise<boolean>;
   logout: () => Promise<void>;
-  setTokens: (accessToken: string, refreshToken: string) => Promise<void>;
-  hydrate: () => Promise<void>;
+  clearError: () => void;
+
+  // Called by the Firebase auth listener in _layout.tsx
+  setUser: (user: AuthUser | null) => void;
+  setHydrated: () => void;
+
+  // Onboarding
   completeOnboarding: () => Promise<void>;
+  setOnboardingComplete: (v: boolean) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+// ─── Store ────────────────────────────────────────────────────────────────────
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  accessToken: null,
-  refreshToken: null,
   isAuthenticated: false,
-  isHydrated: false,
+  isHydrated: false,   // Firebase hasn't reported yet
+  isLoading: false,
+  error: null,
   onboardingComplete: false,
 
-  login: async (accessToken, user, refreshToken) => {
-    await SecureStore.setItemAsync(SECURE_KEY_TOKEN, accessToken);
-    await SecureStore.setItemAsync(SECURE_KEY_USER, JSON.stringify(user));
-    if (refreshToken) {
-      await SecureStore.setItemAsync(SECURE_KEY_REFRESH, refreshToken);
+  // ── Firebase listener callback ──────────────────────────────────────────────
+  setUser: (user) =>
+    set({
+      user,
+      isAuthenticated: !!user,
+      // Preserve onboardingComplete if it was already true
+      onboardingComplete: user ? get().onboardingComplete : false,
+    }),
+
+  setHydrated: () => set({ isHydrated: true }),
+
+  // ── Login ───────────────────────────────────────────────────────────────────
+  login: async (email, password) => {
+    set({ isLoading: true, error: null });
+    const { user, error } = await signIn(email, password);
+    if (user) {
+      set({ user, isAuthenticated: true, isLoading: false, error: null });
+      return true;
     }
-    set({ accessToken, refreshToken: refreshToken ?? null, user, isAuthenticated: true });
+    set({ error, isLoading: false });
+    return false;
   },
 
-  setTokens: async (accessToken, refreshToken) => {
-    await SecureStore.setItemAsync(SECURE_KEY_TOKEN, accessToken);
-    await SecureStore.setItemAsync(SECURE_KEY_REFRESH, refreshToken);
-    set({ accessToken, refreshToken });
+  // ── Signup ──────────────────────────────────────────────────────────────────
+  signup: async (email, password, name) => {
+    set({ isLoading: true, error: null });
+    const { user, error } = await signUp(email, password, name);
+    if (user) {
+      set({ user, isAuthenticated: true, isLoading: false, error: null });
+      return true;
+    }
+    set({ error, isLoading: false });
+    return false;
   },
 
+  // ── Logout ──────────────────────────────────────────────────────────────────
   logout: async () => {
-    await SecureStore.deleteItemAsync(SECURE_KEY_TOKEN);
-    await SecureStore.deleteItemAsync(SECURE_KEY_REFRESH);
-    await SecureStore.deleteItemAsync(SECURE_KEY_USER);
-    set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false });
+    await signOut();
+    set({
+      user: null,
+      isAuthenticated: false,
+      onboardingComplete: false,
+      error: null,
+    });
   },
 
+  clearError: () => set({ error: null }),
+
+  // ── Onboarding ──────────────────────────────────────────────────────────────
   completeOnboarding: async () => {
-    await SecureStore.setItemAsync(SECURE_KEY_ONBOARDING, 'true');
     set({ onboardingComplete: true });
   },
 
-  hydrate: async () => {
-    try {
-      const token = await SecureStore.getItemAsync(SECURE_KEY_TOKEN);
-      const refresh = await SecureStore.getItemAsync(SECURE_KEY_REFRESH);
-      const userJson = await SecureStore.getItemAsync(SECURE_KEY_USER);
-      const onboarding = await SecureStore.getItemAsync(SECURE_KEY_ONBOARDING);
-      if (token && userJson) {
-        const user: User = JSON.parse(userJson);
-        set({
-          accessToken: token,
-          refreshToken: refresh,
-          user,
-          isAuthenticated: true,
-          isHydrated: true,
-          onboardingComplete: onboarding === 'true',
-        });
-      } else {
-        set({ isHydrated: true });
-      }
-    } catch {
-      set({ isHydrated: true });
-    }
-  },
+  setOnboardingComplete: (v) => set({ onboardingComplete: v }),
 }));

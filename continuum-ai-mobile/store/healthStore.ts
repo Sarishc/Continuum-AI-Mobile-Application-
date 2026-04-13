@@ -7,6 +7,7 @@ import type {
   ChatMessage,
   EngineMode,
 } from '../types';
+import { MOCK_PROFILE, MOCK_TIMELINE, MOCK_INSIGHTS, MOCK_SCORE } from '../data/mockHealthData';
 
 interface HealthState {
   // ── Health data ──────────────────────────────────────────────────────────
@@ -48,6 +49,8 @@ interface HealthState {
 
   // ── Global reset ─────────────────────────────────────────────────────────
   reset: () => void;
+
+  loadDemoData: () => void;
 }
 
 const initialState = {
@@ -55,7 +58,7 @@ const initialState = {
   insights: [],
   timeline: [],
   conversations: [],
-  healthScore: 0,
+  healthScore: 72,
   currentConversation: [],
   engineMode: 'ai' as EngineMode,
   isAITyping: false,
@@ -173,4 +176,12 @@ export const useHealthStore = create<HealthState>((set, get) => ({
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   reset: () => set(initialState),
+
+  loadDemoData: () =>
+    set({
+      healthProfile: MOCK_PROFILE,
+      timeline: MOCK_TIMELINE,
+      insights: MOCK_INSIGHTS,
+      healthScore: MOCK_SCORE,
+    }),
 }));

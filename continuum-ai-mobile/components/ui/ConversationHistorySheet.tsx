@@ -18,6 +18,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import Svg, { Path } from 'react-native-svg';
 import { format } from 'date-fns';
 import { useHealthStore } from '../../store/healthStore';
@@ -132,13 +133,13 @@ export function ConversationHistorySheet({
   };
 
   const handleSelectConversation = (conv: Conversation) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     loadConversation(conv.messages);
     handleClose();
   };
 
   const handleNewConversation = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     clearConversation();
     const sysMsg: ChatMessage = {
       id: `sys-${Date.now()}`,

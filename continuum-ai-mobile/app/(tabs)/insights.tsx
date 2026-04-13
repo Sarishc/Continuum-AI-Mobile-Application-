@@ -1,948 +1,436 @@
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
+  StyleSheet,
   RefreshControl,
-  Animated as RNAnimated,
-  LayoutAnimation,
-  UIManager,
-  Platform,
-  Dimensions,
   Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import Animated, {
+  FadeInDown,
+  FadeInUp,
+  FadeIn,
   useSharedValue,
   useAnimatedStyle,
-  withTiming,
+  withSpring,
   withRepeat,
   withSequence,
-  withDelay,
-  Easing,
-  FadeInUp,
-  FadeOut,
+  withTiming,
+  interpolate,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
-import Svg, { Path, Circle, Rect, Polyline } from 'react-native-svg';
-import { format, isToday, isYesterday, subDays, startOfDay } from 'date-fns';
-import { router } from 'expo-router';
-import { track } from '../../services/analytics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path, Polyline, Circle } from 'react-native-svg';
+import { format } from 'date-fns';
 import { useInsights } from '../../hooks/useInsights';
-import { useHealthStore } from '../../store/healthStore';
-import { useSubscriptionStore } from '../../store/subscriptionStore';
-import { ProGate } from '../../components/ui/ProGate';
-import { SeverityBadge } from '../../components/ui/SeverityBadge';
-import { SpecialistDetailSheet } from '../../components/ui/SpecialistDetailSheet';
-import { UploadModal } from '../../components/ui/UploadModal';
 import { Colors } from '../../constants/colors';
-import { FontFamily, FontSize } from '../../constants/typography';
-import { Spacing, BorderRadius } from '../../constants/theme';
-import type { Insight, SeverityLevel, SpecialistRecommendation } from '../../types';
+import { FontFamily } from '../../constants/typography';
+import type { FirestoreInsight } from '../../services/firestoreService';
+import { ConsultationRequestSheet } from '../../components/ui/ConsultationRequestSheet';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// ─── Severity config ──────────────────────────────────────────────────────────
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type SeverityFilter = 'all' | SeverityLevel;
-type CategoryFilter = 'all' | string;
-
-// ─── Config ───────────────────────────────────────────────────────────────────
-
-const SEVERITY_ORDER: SeverityLevel[] = ['critical', 'high', 'moderate', 'low'];
-
-const SEVERITY_COLOR: Record<SeverityLevel, string> = {
+const SEV_COLOR: Record<string, string> = {
   critical: Colors.critical,
-  high: Colors.caution,
-  moderate: Colors.electric,
-  low: Colors.positive,
+  high:     Colors.alert,
+  moderate: Colors.primary,
+  low:      Colors.vital,
 };
 
-const BANNER_GRADIENT: Record<SeverityLevel | 'none', [string, string]> = {
-  critical: Colors.gradientCritical,
-  high: Colors.gradientCaution,
-  moderate: Colors.gradientElectric,
-  low: Colors.gradientPositive,
-  none: Colors.gradientPositive,
+const SEV_BG: Record<string, string> = {
+  critical: 'rgba(255,69,58,0.04)',
+  high:     'rgba(255,159,10,0.04)',
+  moderate: 'rgba(76,141,255,0.04)',
+  low:      'rgba(48,209,88,0.04)',
 };
 
-const CATEGORIES = ['All Categories', 'Cardiovascular', 'Metabolic', 'Medication', 'Lifestyle', 'Preventive', 'General'];
+// ─── SVG Shield icon ──────────────────────────────────────────────────────────
 
-const SEVERITY_LABELS: Record<SeverityLevel, string> = {
-  critical: 'Critical',
-  high: 'High',
-  moderate: 'Moderate',
-  low: 'Low',
-};
-
-// ─── Why it matters copy ──────────────────────────────────────────────────────
-
-type SeverityKey = 'critical' | 'high' | 'moderate' | 'low';
-
-const WHY_IT_MATTERS: Record<string, Partial<Record<SeverityKey, string>>> = {
-  Metabolic: {
-    critical: 'Severe metabolic disruption can affect multiple organ systems simultaneously. This level of dysregulation warrants immediate clinical evaluation to prevent irreversible damage.',
-    high: 'Metabolic imbalances can compound over time and affect cardiovascular, renal, and neurological systems. Early intervention significantly improves long-term outcomes.',
-    moderate: 'Metabolic patterns at this level are important to monitor and address before they progress to a more serious state.',
-    low: 'This is an early indicator worth tracking. Lifestyle adjustments now can prevent escalation.',
-  },
-  Cardiovascular: {
-    critical: 'Cardiovascular events can escalate quickly. This pattern in your data warrants prompt medical evaluation to prevent serious complications.',
-    high: 'Sustained cardiovascular strain increases the risk of hypertensive events and cardiac complications. Early intervention is important.',
-    moderate: 'This cardiovascular pattern warrants monitoring and a conversation with your doctor at your next visit.',
-    low: 'A low-level cardiovascular signal — worth tracking as part of your overall health picture.',
-  },
-  Medication: {
-    high: 'Medication adherence and timing are critical to treatment efficacy. Deviations can significantly affect therapeutic outcomes.',
-    moderate: 'Following your medication regimen closely ensures you get the intended benefits and minimises side effect risk.',
-    low: 'A minor medication note to keep in mind. No immediate action required.',
-  },
-  Lifestyle: {
-    high: 'Lifestyle factors at this severity level are actively impacting measurable health outcomes in your data.',
-    moderate: 'Lifestyle adjustments can have a meaningful impact on your health trajectory.',
-    low: 'Small, consistent lifestyle improvements compound over time into significant health gains.',
-  },
-  Preventive: {
-    high: 'Preventive care at this level is time-sensitive — delays can allow conditions to progress undetected.',
-    moderate: 'Preventive screenings are most effective when done on schedule. This item is approaching its recommended timeframe.',
-    low: 'Staying current with preventive care helps detect conditions early, when treatment is most effective.',
-  },
-  General: {
-    high: 'This pattern requires attention. Discuss it with your doctor soon.',
-    moderate: 'Worth reviewing at your next appointment.',
-    low: 'A general health note to keep in mind.',
-  },
-};
-
-function getWhyItMatters(category: string | undefined, severity: SeverityLevel): string {
-  const cat = category ?? 'General';
+function ShieldIcon({ status }: { status: 'clear' | 'warning' | 'critical' }) {
+  const color = status === 'clear' ? Colors.vital : status === 'warning' ? Colors.alert : Colors.critical;
   return (
-    WHY_IT_MATTERS[cat]?.[severity as SeverityKey] ??
-    WHY_IT_MATTERS.General[severity as SeverityKey] ??
-    'This insight is based on patterns detected in your health data.'
-  );
-}
-
-// ─── Recommended action copy ──────────────────────────────────────────────────
-
-const RECOMMENDED_ACTION: Record<SeverityLevel, { title: string; sub: string }> = {
-  critical: {
-    title: 'Seek Medical Attention',
-    sub: 'Contact your doctor today or visit urgent care if symptoms are severe.',
-  },
-  high: {
-    title: 'Schedule an Appointment',
-    sub: 'Book a follow-up with your doctor within the next 1–2 weeks.',
-  },
-  moderate: {
-    title: 'Monitor and Track',
-    sub: 'Keep logging your symptoms and review at your next scheduled visit.',
-  },
-  low: {
-    title: 'Stay Informed',
-    sub: 'This is a low-priority item. Continue healthy habits and monitor over time.',
-  },
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function worstSeverity(insights: Insight[]): SeverityLevel | 'none' {
-  for (const s of SEVERITY_ORDER) {
-    if (insights.some((i) => i.severity === s)) return s;
-  }
-  return 'none';
-}
-
-function sortInsights(list: Insight[]): Insight[] {
-  return [...list].sort((a, b) => {
-    const ai = SEVERITY_ORDER.indexOf(a.severity);
-    const bi = SEVERITY_ORDER.indexOf(b.severity);
-    if (ai !== bi) return ai - bi;
-    return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
-  });
-}
-
-function countBySeverity(insights: Insight[]): Record<SeverityLevel, number> {
-  return {
-    critical: insights.filter((i) => i.severity === 'critical').length,
-    high: insights.filter((i) => i.severity === 'high').length,
-    moderate: insights.filter((i) => i.severity === 'moderate').length,
-    low: insights.filter((i) => i.severity === 'low').length,
-  };
-}
-
-// ─── Chart data ───────────────────────────────────────────────────────────────
-
-interface BarDatum {
-  label: string;
-  count: number;
-  color: string;
-}
-
-function buildChartData(insights: Insight[]): BarDatum[] {
-  const result: BarDatum[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const day = startOfDay(subDays(new Date(), i));
-    const dayStr = format(day, 'yyyy-MM-dd');
-    const dayInsights = insights.filter((ins) =>
-      ins.generatedAt.startsWith(dayStr)
-    );
-    const worst = worstSeverity(dayInsights);
-    const color =
-      worst === 'none' ? Colors.border : SEVERITY_COLOR[worst as SeverityLevel];
-    result.push({
-      label: format(day, 'MMM d'),
-      count: dayInsights.length,
-      color,
-    });
-  }
-  return result;
-}
-
-
-// ─── Icons ────────────────────────────────────────────────────────────────────
-
-function ShieldCheckIcon() {
-  return (
-    <Svg width={80} height={80} viewBox="0 0 80 80" fill="none">
+    <Svg width={40} height={40} viewBox="0 0 40 40" fill="none">
       <Path
-        d="M40 8L14 20V38C14 52.4 25.2 66 40 70C54.8 66 66 52.4 66 38V20L40 8Z"
-        fill="rgba(63, 185, 80, 0.12)"
-        stroke={Colors.accent}
-        strokeWidth={2}
-      />
-      <Path
-        d="M28 40L36 48L52 32"
-        stroke={Colors.accent}
-        strokeWidth={3}
-        strokeLinecap="round"
+        d="M20 4L6 10V20C6 28.5 12.5 36.2 20 38C27.5 36.2 34 28.5 34 20V10L20 4Z"
+        fill={`${color}20`}
+        stroke={color}
+        strokeWidth={1.5}
         strokeLinejoin="round"
       />
+      {status === 'clear' && (
+        <Path d="M14 20L18 24L26 16" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      )}
+      {status === 'warning' && (
+        <>
+          <Path d="M20 14V22" stroke={color} strokeWidth={2} strokeLinecap="round" />
+          <Circle cx="20" cy="26" r="1.5" fill={color} />
+        </>
+      )}
+      {status === 'critical' && (
+        <Path d="M15 15L25 25M25 15L15 25" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      )}
     </Svg>
   );
 }
 
-function AlertIcon() {
+// ─── Sparkline ────────────────────────────────────────────────────────────────
+
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+  if (values.length < 2) return null;
+  const W = 80;
+  const H = 40;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 8) - 4;
+    return `${x},${y}`;
+  }).join(' ');
+
   return (
-    <Svg width={48} height={48} viewBox="0 0 48 48" fill="none">
-      <Path
-        d="M24 4L44 40H4L24 4Z"
-        fill="rgba(255,255,255,0.15)"
-        stroke="rgba(255,255,255,0.9)"
-        strokeWidth={2}
-        strokeLinejoin="round"
-      />
-      <Path d="M24 18V28" stroke="rgba(255,255,255,0.9)" strokeWidth={2.5} strokeLinecap="round" />
-      <Circle cx="24" cy="34" r="1.5" fill="rgba(255,255,255,0.9)" />
+    <Svg width={W} height={H}>
+      <Polyline points={pts} fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
 
-function InfoIcon() {
-  return (
-    <Svg width={48} height={48} viewBox="0 0 48 48" fill="none">
-      <Circle cx="24" cy="24" r="20" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.9)" strokeWidth={2} />
-      <Path d="M24 21V34" stroke="rgba(255,255,255,0.9)" strokeWidth={2.5} strokeLinecap="round" />
-      <Circle cx="24" cy="15" r="1.5" fill="rgba(255,255,255,0.9)" />
-    </Svg>
-  );
+// ─── Summary Card ─────────────────────────────────────────────────────────────
+
+interface SummaryCardProps {
+  critical: number;
+  high: number;
+  unread: number;
+  total: number;
+  lastChecked: string;
+  sparkValues: number[];
 }
 
-function CheckAllIcon() {
-  return (
-    <Svg width={48} height={48} viewBox="0 0 48 48" fill="none">
-      <Circle cx="24" cy="24" r="20" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.9)" strokeWidth={2} />
-      <Path d="M14 24L21 31L34 18" stroke="rgba(255,255,255,0.9)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
+function SummaryCard({ critical, high, unread, total, lastChecked, sparkValues }: SummaryCardProps) {
+  const hasCritical = critical > 0;
+  const hasWarning = high > 0;
+  const status = hasCritical ? 'critical' : hasWarning ? 'warning' : 'clear';
+  const statusColor = hasCritical ? Colors.critical : hasWarning ? Colors.alert : Colors.vital;
 
-function ChevronIcon({ flipped, color }: { flipped: boolean; color: string }) {
-  return (
-    <Svg
-      width={16}
-      height={16}
-      viewBox="0 0 24 24"
-      fill="none"
-      style={{ transform: [{ rotate: flipped ? '180deg' : '0deg' }] }}
-    >
-      <Path d="M6 9L12 15L18 9" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-function ActionIcon({ severity }: { severity: SeverityLevel }) {
-  const color = SEVERITY_COLOR[severity];
-  switch (severity) {
-    case 'critical':
-    case 'high':
-      return (
-        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-          <Path
-            d="M12 2L2 7V12C2 16.55 6.84 20.74 12 22C17.16 20.74 22 16.55 22 12V7L12 2Z"
-            stroke={color}
-            strokeWidth={1.8}
-            strokeLinejoin="round"
-          />
-          <Path d="M12 8V12M12 16H12.01" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-        </Svg>
-      );
-    case 'moderate':
-      return (
-        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-          <Path d="M9 12H15M12 9V15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-        </Svg>
-      );
-    default:
-      return (
-        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-          <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={1.8} />
-          <Path d="M12 8V12" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-          <Circle cx="12" cy="16" r="0.5" fill={color} stroke={color} strokeWidth={1} />
-        </Svg>
-      );
-  }
-}
-
-// ─── Bar chart ────────────────────────────────────────────────────────────────
-
-const CHART_HEIGHT = 90;
-
-function AnimatedBar({ datum, maxCount, index }: { datum: BarDatum; maxCount: number; index: number }) {
-  const heightRatio = useSharedValue(0);
-  const targetRatio = maxCount > 0 ? datum.count / maxCount : 0;
-
+  // Pulse animation for critical
+  const pulse = useSharedValue(1);
   useEffect(() => {
-    heightRatio.value = withDelay(
-      index * 80,
-      withTiming(targetRatio, { duration: 500, easing: Easing.out(Easing.cubic) })
-    );
-  }, []);
+    if (hasCritical) {
+      pulse.value = withRepeat(
+        withSequence(
+          withTiming(1.08, { duration: 900 }),
+          withTiming(1, { duration: 900 })
+        ),
+        -1,
+        false
+      );
+    }
+  }, [hasCritical]);
 
-  const barStyle = useAnimatedStyle(() => ({
-    height: heightRatio.value * CHART_HEIGHT,
-    borderRadius: 4,
-    backgroundColor: datum.count === 0 ? Colors.surfaceElevated : datum.color,
-    minHeight: datum.count === 0 ? 4 : 0,
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.value }],
   }));
 
+  const statusText = hasCritical
+    ? `${critical} critical alert${critical > 1 ? 's' : ''}`
+    : hasWarning
+    ? `${high} need attention`
+    : 'All clear';
+
+  const subText = hasCritical
+    ? 'Review your critical insights below'
+    : hasWarning
+    ? 'Review your insights below'
+    : 'Keep tracking your health';
+
   return (
-    <View style={chartStyles.barCol}>
-      <View style={chartStyles.barTrack}>
-        <Animated.View style={[chartStyles.bar, barStyle]} />
+    <Animated.View entering={FadeInDown.duration(300)} style={summaryStyles.card}>
+      <View style={summaryStyles.left}>
+        <Animated.View style={hasCritical ? pulseStyle : undefined}>
+          <ShieldIcon status={status} />
+        </Animated.View>
+        <View style={summaryStyles.textCol}>
+          <Text style={[summaryStyles.statusText, { color: statusColor }]}>{statusText}</Text>
+          <Text style={summaryStyles.subText}>{subText}</Text>
+          <Text style={summaryStyles.lastChecked}>Last checked {lastChecked}</Text>
+        </View>
       </View>
-      <Text style={chartStyles.barLabel}>{datum.label.split(' ')[1]}</Text>
-      <Text style={chartStyles.barMonth}>{datum.label.split(' ')[0]}</Text>
-    </View>
+      <Sparkline values={sparkValues} color={statusColor} />
+    </Animated.View>
   );
 }
 
-function TrendChart({ insights }: { insights: Insight[] }) {
-  const data = useMemo(() => buildChartData(insights), [insights]);
-  const maxCount = Math.max(...data.map((d) => d.count), 1);
-
-  return (
-    <View style={chartStyles.wrapper}>
-      <View style={chartStyles.header}>
-        <Text style={chartStyles.title}>Insights Over Time</Text>
-        <Text style={chartStyles.sub}>Past 7 days</Text>
-      </View>
-      <View style={chartStyles.chart}>
-        {data.map((datum, i) => (
-          <AnimatedBar key={datum.label} datum={datum} maxCount={maxCount} index={i} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-const chartStyles = StyleSheet.create({
-  wrapper: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing[4],
-    gap: Spacing[3],
-    marginBottom: Spacing[4],
-  },
-  header: {
+const summaryStyles = StyleSheet.create({
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginHorizontal: 20,
+    height: 72,
   },
-  title: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodySemiBold,
+  left: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  textCol: {
+    flex: 1,
+    gap: 2,
+  },
+  statusText: {
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 22,
     color: Colors.textPrimary,
   },
-  sub: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
+  subText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.40)',
   },
-  chart: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: CHART_HEIGHT + 32,
-  },
-  barCol: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  barTrack: {
-    width: '100%',
-    height: CHART_HEIGHT,
-    justifyContent: 'flex-end',
-    paddingHorizontal: 3,
-  },
-  bar: {
-    width: '100%',
-    borderRadius: 4,
-  },
-  barLabel: {
-    fontSize: 10,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textMuted,
-  },
-  barMonth: {
-    fontSize: 9,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-    opacity: 0.6,
+  lastChecked: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 2,
   },
 });
 
+// ─── Filter chips ─────────────────────────────────────────────────────────────
 
-// ─── Summary banner ───────────────────────────────────────────────────────────
-
-function SummaryBanner({ insights }: { insights: Insight[] }) {
-  const worst = worstSeverity(insights);
-  const gradient = BANNER_GRADIENT[worst];
-  const activeCount = insights.filter((i) => i.severity === 'critical' || i.severity === 'high').length;
-
-  const shimmerX = useSharedValue(-SCREEN_WIDTH);
-  useEffect(() => {
-    shimmerX.value = withRepeat(
-      withSequence(
-        withTiming(SCREEN_WIDTH * 2, { duration: 900, easing: Easing.ease }),
-        withDelay(3100, withTiming(-SCREEN_WIDTH, { duration: 0 }))
-      ),
-      -1,
-      false
-    );
-  }, []);
-
-  const shimmerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shimmerX.value }, { rotate: '20deg' }],
-  }));
-
-  let icon = <CheckAllIcon />;
-  if (worst === 'critical' || worst === 'high') icon = <AlertIcon />;
-  else if (worst === 'moderate') icon = <InfoIcon />;
-
-  let titleText = 'Health Looks Good';
-  let subText = 'No new health concerns detected.';
-  if (worst !== 'none' && worst !== 'low') {
-    const urgentCount = activeCount;
-    titleText = `${insights.length} Active Alert${insights.length !== 1 ? 's' : ''}`;
-    if (worst === 'critical') subText = 'Immediate attention recommended.';
-    else if (worst === 'high') subText = 'Follow up with your doctor soon.';
-    else subText = 'Worth monitoring closely.';
-  } else if (worst === 'low') {
-    titleText = `${insights.length} Insight${insights.length !== 1 ? 's' : ''}`;
-    subText = 'Low-priority items to review.';
-  }
-
-  return (
-    <View style={bannerStyles.wrapper}>
-      <LinearGradient
-        colors={gradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={bannerStyles.gradient}
-      >
-        {/* Shimmer overlay */}
-        <Animated.View style={[bannerStyles.shimmer, shimmerStyle]} />
-
-        <View style={bannerStyles.content}>
-          <View style={bannerStyles.iconWrap}>{icon}</View>
-          <View style={bannerStyles.textBlock}>
-            <Text style={bannerStyles.title}>{titleText}</Text>
-            <Text style={bannerStyles.sub}>{subText}</Text>
-          </View>
-        </View>
-      </LinearGradient>
-    </View>
-  );
-}
-
-const bannerStyles = StyleSheet.create({
-  wrapper: {
-    marginHorizontal: Spacing[4],
-    marginBottom: Spacing[4],
-    borderRadius: BorderRadius.lg,
-    overflow: 'hidden',
-  },
-  gradient: {
-    borderRadius: BorderRadius.lg,
-    overflow: 'hidden',
-    padding: Spacing[4],
-  },
-  shimmer: {
-    position: 'absolute',
-    top: -40,
-    width: 60,
-    height: 200,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[4],
-  },
-  iconWrap: {
-    width: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  textBlock: { flex: 1, gap: 4 },
-  title: {
-    fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.displayBold,
-    color: '#FFFFFF',
-    lineHeight: 28,
-  },
-  sub: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: 'rgba(255,255,255,0.85)',
-    lineHeight: 18,
-  },
-});
-
-// ─── Filter rows ──────────────────────────────────────────────────────────────
-
-interface SeverityFilterRowProps {
-  active: SeverityFilter;
-  counts: Record<SeverityLevel, number>;
-  onChange: (s: SeverityFilter) => void;
-}
-
-function SeverityFilterRow({ active, counts, onChange }: SeverityFilterRowProps) {
-  const chips: { key: SeverityFilter; label: string; color?: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'critical', label: 'Critical', color: Colors.critical },
-    { key: 'high', label: 'High', color: Colors.caution },
-    { key: 'moderate', label: 'Moderate', color: Colors.electric },
-    { key: 'low', label: 'Low', color: Colors.positive },
-  ];
-
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={filterStyles.row}
-    >
-      {chips.map((chip) => {
-        const count = chip.key !== 'all' ? counts[chip.key as SeverityLevel] : null;
-        if (chip.key !== 'all' && count === 0) return null;
-        const isActive = chip.key === active;
-        const bg = isActive && chip.color ? `${chip.color}22` : undefined;
-        return (
-          <TouchableOpacity
-            key={chip.key}
-            onPress={() => onChange(chip.key)}
-            activeOpacity={0.75}
-            style={[
-              filterStyles.chip,
-              isActive && filterStyles.chipActive,
-              isActive && chip.color ? { borderColor: chip.color, backgroundColor: bg } : null,
-              isActive && !chip.color ? filterStyles.chipAllActive : null,
-            ]}
-          >
-            <Text
-              style={[
-                filterStyles.chipText,
-                isActive && chip.color ? { color: chip.color } : null,
-                isActive && !chip.color ? { color: Colors.primary } : null,
-              ]}
-            >
-              {chip.label}
-              {count !== null ? ` (${count})` : ''}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-interface CategoryFilterRowProps {
-  active: CategoryFilter;
-  onChange: (c: CategoryFilter) => void;
-}
-
-function CategoryFilterRow({ active, onChange }: CategoryFilterRowProps) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={filterStyles.categoryRow}
-    >
-      {CATEGORIES.map((cat) => {
-        const key: CategoryFilter = cat === 'All Categories' ? 'all' : cat;
-        const isActive = key === active;
-        return (
-          <TouchableOpacity
-            key={cat}
-            onPress={() => onChange(key)}
-            activeOpacity={0.75}
-            style={[
-              filterStyles.catChip,
-              isActive && filterStyles.catChipActive,
-            ]}
-          >
-            <Text style={[filterStyles.catChipText, isActive && filterStyles.catChipTextActive]}>
-              {cat}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-const filterStyles = StyleSheet.create({
-  row: {
-    paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[3],
-    gap: Spacing[2],
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  chip: {
-    paddingHorizontal: Spacing[3],
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-  },
-  chipActive: { borderColor: Colors.primary },
-  chipAllActive: { backgroundColor: 'rgba(56,139,253,0.1)', borderColor: Colors.primary },
-  chipText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textSecondary,
-  },
-  categoryRow: {
-    paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[2],
-    gap: Spacing[2],
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  catChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-  },
-  catChipActive: {
-    borderColor: Colors.insight,
-    backgroundColor: Colors.insightGlow,
-  },
-  catChipText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textSecondary,
-  },
-  catChipTextActive: { color: Colors.insight },
-});
-
+const FILTERS = [
+  { id: 'all',        label: 'All' },
+  { id: 'predictive', label: '🔮 Predictive' },
+  { id: 'critical',   label: 'Critical' },
+  { id: 'high',       label: 'High' },
+  { id: 'moderate',   label: 'Moderate' },
+  { id: 'low',        label: 'Low' },
+];
 
 // ─── Insight card ─────────────────────────────────────────────────────────────
 
-interface InsightCardItemProps {
-  insight: Insight;
-  index: number;
-  markRead: (id: string) => void;
-  dismiss: (id: string) => void;
+interface InsightCardProps {
+  insight: FirestoreInsight;
+  onDismiss?: () => void;
+  onGetDoctorOpinion?: (id: string, text: string, severity: string) => void;
 }
 
-const InsightCardItem = React.memo(function InsightCardItem({ insight, index, markRead, dismiss }: InsightCardItemProps) {
+const EXPAND_HEIGHT = 160;
+
+function InsightCard({ insight, onDismiss, onGetDoctorOpinion }: InsightCardProps) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
-  const [specialistOpen, setSpecialistOpen] = useState(false);
-  const setPendingChatContext = useHealthStore((s) => s.setPendingChatContext);
-  const severityColor = SEVERITY_COLOR[insight.severity];
-  const isPulse = insight.severity === 'critical' || insight.severity === 'high';
+  const expandH = useSharedValue(0);
+  const chevronRot = useSharedValue(0);
+  const measuredH = useRef(EXPAND_HEIGHT);
 
-  // Pulsing left border for critical/high
-  const pulseAnim = useRef(new RNAnimated.Value(0.65)).current;
-  useEffect(() => {
-    if (!isPulse) return;
-    const loop = RNAnimated.loop(
-      RNAnimated.sequence([
-        RNAnimated.timing(pulseAnim, { toValue: 1, duration: 750, useNativeDriver: true }),
-        RNAnimated.timing(pulseAnim, { toValue: 0.65, duration: 750, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isPulse]);
+  const sevColor = insight.category === 'Predictive'
+    ? '#BF5AF2'
+    : SEV_COLOR[insight.severity] ?? Colors.primary;
+  const bgTint = SEV_BG[insight.severity] ?? 'transparent';
+  const category = insight.category ?? 'Health';
+  const timeAgo = format(new Date(insight.createdAt), 'MMM d');
+  const isUnread = !insight.isRead;
+  const isCritical = insight.severity === 'critical' || insight.severity === 'high';
 
-  // Auto-mark read after 2s when expanded
+  // Heartbeat for critical
+  const accent = useSharedValue(0.6);
   useEffect(() => {
-    if (expanded && !insight.is_read) {
-      const timer = setTimeout(() => markRead(insight.id), 2000);
-      return () => clearTimeout(timer);
+    if (isCritical) {
+      accent.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1000 }),
+          withTiming(0.6, { duration: 1000 })
+        ),
+        -1,
+        false
+      );
     }
-  }, [expanded, insight.is_read]);
+  }, [isCritical]);
+  const accentStyle = useAnimatedStyle(() => ({ opacity: accent.value }));
 
-  const toggleExpand = useCallback(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  const expandedContainerStyle = useAnimatedStyle(() => ({
+    height: expandH.value,
+    overflow: 'hidden',
+  }));
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${interpolate(chevronRot.value, [0, 1], [0, 180])}deg` }],
+  }));
+
+  const handlePress = useCallback(() => {
     const next = !expanded;
     setExpanded(next);
-    if (next) track('insight_expanded', { severity: insight.severity });
-  }, [expanded, insight.severity]);
-
-  const dateLabel = (() => {
-    const d = new Date(insight.generatedAt);
-    if (isToday(d)) return 'Today';
-    if (isYesterday(d)) return 'Yesterday';
-    return format(d, 'MMM d');
-  })();
-
-  const action = RECOMMENDED_ACTION[insight.severity];
+    expandH.value = withSpring(next ? measuredH.current : 0, { damping: 22, stiffness: 280 });
+    chevronRot.value = withSpring(next ? 1 : 0, { damping: 22, stiffness: 280 });
+  }, [expanded]);
 
   return (
-    <Animated.View entering={FadeInUp.delay(index * 60).duration(340)} style={cardStyles.outer}>
-      {/* Pulsing left border */}
-      <RNAnimated.View
-        style={[
-          cardStyles.leftBorder,
-          { backgroundColor: severityColor, opacity: isPulse ? pulseAnim : 1 },
-        ]}
-      />
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.85}
+      style={[icStyles.outer, { backgroundColor: bgTint }]}
+    >
+      {/* Left accent bar with heartbeat */}
+      <Animated.View style={[icStyles.accent, { backgroundColor: sevColor }, isCritical && accentStyle]} />
 
-      <View style={[cardStyles.card, expanded && cardStyles.cardExpanded]}>
-        {/* ── Collapsed / header area ─────────────────────── */}
-        <TouchableOpacity onPress={toggleExpand} activeOpacity={0.85} style={cardStyles.touch}>
-          {/* Row 1: severity + timestamp + unread dot */}
-          <View style={cardStyles.row1}>
-            <SeverityBadge severity={insight.severity} />
-            <View style={cardStyles.row1Right}>
-              <Text style={cardStyles.dateText}>{dateLabel}</Text>
-              {!insight.is_read && (
-                <Animated.View exiting={FadeOut.duration(300)} style={cardStyles.unreadDot} />
-              )}
-            </View>
-          </View>
-
-          {/* Row 2: category + confidence */}
-          <View style={cardStyles.row2}>
-            {insight.healthCategory ? (
-              <View style={cardStyles.catPill}>
-                <Text style={cardStyles.catPillText}>{insight.healthCategory}</Text>
-              </View>
-            ) : null}
-            <Text style={cardStyles.confidenceText}>
-              {Math.round(insight.confidence * 100)}% confidence
+      <View style={icStyles.inner}>
+        {/* Top zone */}
+        <View style={icStyles.topRow}>
+          <View style={[icStyles.catPill, { backgroundColor: `${sevColor}18` }]}>
+            <Text style={[icStyles.catText, { color: sevColor }]}>
+              {category.toUpperCase()}
             </Text>
           </View>
-
-          {/* Row 3: insight text */}
-          <Text style={cardStyles.summaryText} numberOfLines={expanded ? undefined : 2}>
-            {insight.summary}
-          </Text>
-
-          {/* Row 4: action hint */}
-          <Text style={cardStyles.actionHint} numberOfLines={1}>
-            → {action.title}
-          </Text>
-
-          {/* Bottom row */}
-          <View style={cardStyles.bottomRow}>
-            <Text style={cardStyles.tapHint}>Tap to {expanded ? 'collapse' : 'expand'}</Text>
-            <View style={cardStyles.bottomRight}>
-              {insight.specialist ? (
-                <Text style={cardStyles.specialistHint}>👨‍⚕️ Specialist suggested</Text>
-              ) : null}
-              <ChevronIcon flipped={expanded} color={Colors.textMuted} />
-            </View>
+          <View style={icStyles.topRight}>
+            <Text style={icStyles.timeAgo}>{timeAgo}</Text>
+            {isUnread && <View style={icStyles.unreadDot} />}
+            <Animated.Text style={[icStyles.chevron, chevronStyle]}>⌄</Animated.Text>
           </View>
-        </TouchableOpacity>
+        </View>
 
-        {/* ── Expanded body ──────────────────────────────── */}
-        {expanded ? (
-          <ProGate feature="expand_insight" style={cardStyles.expandedBody}>
-          <View style={cardStyles.expandedBody}>
-            <View style={cardStyles.divider} />
+        {/* Middle zone — summary */}
+        <Text style={icStyles.summary} numberOfLines={expanded ? undefined : 2}>
+          {insight.insightText}
+        </Text>
 
-            {/* Why this matters */}
-            <View style={cardStyles.section}>
-              <Text style={cardStyles.sectionLabel}>WHY THIS MATTERS</Text>
-              <Text style={cardStyles.bodyText}>
-                {getWhyItMatters(insight.healthCategory, insight.severity)}
-              </Text>
-            </View>
+        {/* Bottom zone */}
+        <View style={icStyles.bottomRow}>
+          <View style={icStyles.confPill}>
+            <Text style={icStyles.confText}>
+              {insight.confidenceScore !== undefined
+                ? `${Math.round(insight.confidenceScore * 100)}% confidence`
+                : 'high confidence'}
+            </Text>
+          </View>
+          <Text style={icStyles.detailsLink}>Details →</Text>
+        </View>
 
-            {/* Recommended action */}
-            <View style={cardStyles.section}>
-              <Text style={cardStyles.sectionLabel}>RECOMMENDED ACTION</Text>
-              <View style={cardStyles.actionRow}>
-                <ActionIcon severity={insight.severity} />
-                <View style={cardStyles.actionText}>
-                  <Text style={cardStyles.actionTitle}>{action.title}</Text>
-                  <Text style={cardStyles.actionSub}>{action.sub}</Text>
+        {/* Animated expanded section */}
+        <Animated.View style={expandedContainerStyle}>
+          <View
+            onLayout={(e) => {
+              const h = e.nativeEvent.layout.height;
+              if (h > 0) {
+                measuredH.current = h;
+                if (expanded) expandH.value = h;
+              }
+            }}
+            style={icStyles.expandedSection}
+          >
+            {insight.specialist && (
+              <View style={icStyles.actionRow}>
+                <View style={[icStyles.actionIcon, { backgroundColor: `${sevColor}18` }]}>
+                  <Text style={{ fontSize: 14 }}>
+                    {insight.severity === 'critical' ? '🚨' : insight.severity === 'high' ? '⚠️' : '💡'}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={icStyles.actionText}>
+                    {`Consider seeing a ${insight.specialist.type}`}
+                  </Text>
+                  {!!insight.specialist.reason && (
+                    <Text style={icStyles.actionSub}>{insight.specialist.reason}</Text>
+                  )}
                 </View>
               </View>
-            </View>
+            )}
+            <TouchableOpacity
+              style={[icStyles.actionBtn, { borderColor: sevColor }]}
+              onPress={() => {
+                onDismiss?.();
+                router.push('/(tabs)/chat');
+              }}
+            >
+              <Text style={[icStyles.actionBtnText, { color: sevColor }]}>Ask AI About This</Text>
+            </TouchableOpacity>
 
-            {/* Related data */}
-            {insight.relatedEntryIds.length > 0 ? (
-              <View style={cardStyles.section}>
-                <Text style={cardStyles.sectionLabel}>RELATED DATA</Text>
-                <View style={cardStyles.relatedRow}>
-                  {insight.relatedEntryIds.map((eid) => (
-                    <TouchableOpacity
-                      key={eid}
-                      style={cardStyles.relatedPill}
-                      onPress={() => router.push('/(tabs)/timeline' as any)}
-                    >
-                      <Text style={cardStyles.relatedPillText}>Lab Entry · {dateLabel}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+            {/* Predictive timeframe badge */}
+            {insight.category === 'Predictive' && (insight as any).timeframe && (
+              <View style={icStyles.predTimeframeRow}>
+                <Text style={icStyles.predTimeframeText}>
+                  🔮 Prediction · {(insight as any).timeframe}
+                </Text>
               </View>
-            ) : null}
+            )}
 
-            {/* Specialist recommendation */}
-            {insight.specialist ? (
-              <View style={cardStyles.section}>
-                <Text style={cardStyles.sectionLabel}>SPECIALIST RECOMMENDATION</Text>
-                <TouchableOpacity
-                  style={cardStyles.specialistCard}
-                  onPress={() => setSpecialistOpen(true)}
-                  activeOpacity={0.8}
-                >
-                  <View style={cardStyles.specialistLeft}>
-                    <Text style={cardStyles.specialistType}>{insight.specialist.type}</Text>
-                    <Text style={cardStyles.specialistReason} numberOfLines={2}>
-                      {insight.specialist.reason}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      cardStyles.urgencyBadge,
-                      { backgroundColor: `${SEVERITY_COLOR[insight.severity]}18` },
-                    ]}
-                  >
-                    <Text
-                      style={[cardStyles.urgencyText, { color: SEVERITY_COLOR[insight.severity] }]}
-                    >
-                      {insight.specialist.urgency}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
-            {/* Action buttons */}
-            <View style={cardStyles.actionBtns}>
-              <TouchableOpacity
-                style={cardStyles.askAiBtn}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setPendingChatContext(`I want to ask about this insight: "${insight.summary}"`);
-                  router.push('/(tabs)/chat' as any);
-                }}
-                activeOpacity={0.8}
+            {/* Get Doctor's Opinion — shown for medium/high/critical severity */}
+            {(insight.severity === 'high' ||
+              insight.severity === 'critical' ||
+              insight.severity === 'medium') && onGetDoctorOpinion && (
+              <Pressable
+                onPress={() =>
+                  onGetDoctorOpinion(insight.id, insight.insightText, insight.severity)
+                }
+                style={({ pressed }) => [icStyles.doctorBtn, pressed && { opacity: 0.8 }]}
               >
-                <Text style={cardStyles.askAiBtnText}>Ask AI</Text>
-              </TouchableOpacity>
-
-              {insight.is_read ? (
-                <View style={cardStyles.resolvedBtn}>
-                  <Text style={cardStyles.resolvedBtnText}>Resolved ✓</Text>
+                <Text style={{ fontSize: 22 }}>👩‍⚕️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={icStyles.doctorBtnTitle}>Get a Doctor's Opinion</Text>
+                  <Text style={icStyles.doctorBtnSub}>Board-certified physician review · $29</Text>
                 </View>
-              ) : (
-                <TouchableOpacity
-                  style={cardStyles.markReadBtn}
-                  onPress={() => markRead(insight.id)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={cardStyles.markReadBtnText}>Mark as Read</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+                <Text style={icStyles.doctorBtnArrow}>→</Text>
+              </Pressable>
+            )}
           </View>
-          </ProGate>
-        ) : null}
+        </Animated.View>
       </View>
-
-      <SpecialistDetailSheet
-        visible={specialistOpen}
-        specialist={insight.specialist ?? null}
-        onClose={() => setSpecialistOpen(false)}
-      />
-    </Animated.View>
+    </TouchableOpacity>
   );
-});
+}
 
-const cardStyles = StyleSheet.create({
+const icStyles = StyleSheet.create({
   outer: {
     flexDirection: 'row',
-    marginBottom: Spacing[3],
-  },
-  leftBorder: {
-    width: 4,
-    borderRadius: 4,
-    marginRight: Spacing[2],
-  },
-  card: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 14,
     overflow: 'hidden',
+    marginHorizontal: 20,
+    marginBottom: 10,
   },
-  cardExpanded: {
-    borderColor: Colors.borderActive,
+  accent: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
   },
-  touch: {
-    padding: Spacing[3],
-    gap: Spacing[2],
+  inner: {
+    flex: 1,
+    padding: 16,
+    gap: 10,
   },
-  row1: {
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  row1Right: {
+  catPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 100,
+  },
+  catText: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 1.2,
+  },
+  topRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing[2],
+    gap: 6,
   },
-  dateText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
+  timeAgo: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.30)',
   },
   unreadDot: {
     width: 6,
@@ -950,394 +438,300 @@ const cardStyles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: Colors.primary,
   },
-  row2: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  catPill: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: BorderRadius.full,
-    backgroundColor: 'rgba(188,140,255,0.1)',
-  },
-  catPillText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.purple,
-  },
-  confidenceText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
-  },
-  summaryText: {
-    fontSize: FontSize.md,
+  summary: {
+    fontSize: 15,
     fontFamily: FontFamily.bodyRegular,
     color: Colors.textPrimary,
     lineHeight: 22,
-  },
-  actionHint: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.primary,
   },
   bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 2,
+    paddingTop: 8,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.08)',
   },
-  tapHint: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textMuted,
+  confPill: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
-  bottomRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[2],
+  confText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.40)',
   },
-  specialistHint: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.purple,
+  detailsLink: {
+    fontSize: 13,
+    color: Colors.primary,
   },
-  expandedBody: {
-    gap: Spacing[4],
-    paddingHorizontal: Spacing[3],
-    paddingBottom: Spacing[3],
+  chevron: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginLeft: 4,
   },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginHorizontal: -Spacing[3],
+  expandedSection: {
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 12,
+    gap: 10,
   },
-  section: { gap: Spacing[2] },
-  sectionLabel: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.textMuted,
-    letterSpacing: 1,
+  expandedLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.30)',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
   },
-  bodyText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-    lineHeight: 21,
+  expandedText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.65)',
+    lineHeight: 22,
   },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: Spacing[3],
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.sm,
-    padding: Spacing[3],
+    gap: 10,
   },
-  actionText: { flex: 1, gap: 4 },
-  actionTitle: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodySemiBold,
+  actionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  actionText: {
+    fontSize: 15,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '500',
     color: Colors.textPrimary,
-  },
-  actionSub: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
     lineHeight: 20,
   },
-  relatedRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing[2],
-  },
-  relatedPill: {
-    paddingHorizontal: Spacing[3],
-    paddingVertical: 5,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.borderActive,
-    backgroundColor: 'rgba(56,139,253,0.08)',
-  },
-  relatedPillText: {
-    fontSize: FontSize.xs,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.primary,
-  },
-  specialistCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: Spacing[3],
-    gap: Spacing[3],
-  },
-  specialistLeft: { flex: 1, gap: 3 },
-  specialistType: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textPrimary,
-  },
-  specialistReason: {
-    fontSize: FontSize.xs,
+  actionSub: {
+    fontSize: 13,
     fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-    lineHeight: 17,
+    color: Colors.textTertiary,
+    lineHeight: 18,
   },
-  urgencyBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
+  actionBtn: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
   },
-  urgencyText: {
-    fontSize: FontSize.xs,
+  actionBtnText: {
+    fontSize: 15,
     fontFamily: FontFamily.bodyMedium,
-    textTransform: 'capitalize',
+    fontWeight: '500',
   },
-  actionBtns: {
+  doctorBtn: {
     flexDirection: 'row',
-    gap: Spacing[3],
-  },
-  askAiBtn: {
-    flex: 1,
-    height: 40,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.primary,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 12,
+    padding: 14,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    marginTop: 4,
   },
-  askAiBtnText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.primary,
-  },
-  markReadBtn: {
-    flex: 1,
-    height: 40,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  markReadBtnText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
+  doctorBtnTitle: {
+    fontSize: 15,
+    fontWeight: '600',
     color: '#FFFFFF',
+    marginBottom: 2,
   },
-  resolvedBtn: {
-    flex: 1,
-    height: 40,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.accent,
+  doctorBtnSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.40)',
+  },
+  doctorBtnArrow: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4C8DFF',
+  },
+  predTimeframeRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(191,90,242,0.15)',
   },
-  resolvedBtnText: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.accent,
+  predTimeframeText: {
+    fontSize: 12,
+    color: 'rgba(191,90,242,0.65)',
   },
 });
 
-
-// ─── Empty states ─────────────────────────────────────────────────────────────
-
-function EmptyAllClear({ onAddData }: { onAddData: () => void }) {
-  return (
-    <View style={emptyStyles.root}>
-      <ShieldCheckIcon />
-      <Text style={emptyStyles.title}>You're all clear</Text>
-      <Text style={emptyStyles.desc}>
-        No health insights detected. Keep tracking your health data to get personalised recommendations.
-      </Text>
-      <TouchableOpacity onPress={onAddData} activeOpacity={0.85} style={emptyStyles.btnWrap}>
-        <LinearGradient
-          colors={Colors.gradientElectric}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={emptyStyles.btn}
-        >
-          <Text style={emptyStyles.btnText}>Add Health Data</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function EmptyFiltered({ onClear }: { onClear: () => void }) {
-  return (
-    <View style={emptyStyles.filteredRoot}>
-      <Text style={emptyStyles.filteredTitle}>No insights match this filter</Text>
-      <TouchableOpacity onPress={onClear}>
-        <Text style={emptyStyles.clearLink}>Clear filters</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-const emptyStyles = StyleSheet.create({
-  root: {
-    paddingTop: Spacing[12],
-    alignItems: 'center',
-    gap: Spacing[4],
-    paddingHorizontal: Spacing[8],
-  },
-  title: {
-    fontSize: FontSize['3xl'],
-    fontFamily: FontFamily.displayBold,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
-  desc: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodyRegular,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  btnWrap: {
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-    marginTop: Spacing[2],
-    alignSelf: 'stretch',
-  },
-  btn: {
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: BorderRadius.md,
-  },
-  btnText: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodySemiBold,
-    color: '#FFFFFF',
-  },
-  filteredRoot: {
-    paddingTop: Spacing[8],
-    alignItems: 'center',
-    gap: Spacing[3],
-  },
-  filteredTitle: {
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.bodySemiBold,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  clearLink: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bodyMedium,
-    color: Colors.primary,
-  },
-});
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
+// ─── Insights Screen ──────────────────────────────────────────────────────────
 
 export default function InsightsScreen() {
   const insets = useSafeAreaInsets();
-  const { insights, unreadCount, markRead, markAllRead, dismiss, refetchAll, isRefetching } =
-    useInsights();
-  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const router = useRouter();
+  const { insights, isLoading, unreadCount, dismissInsight, markAllRead, refetchAll: refetchInsights } = useInsights();
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [consultationInsight, setConsultationInsight] = useState<{
+    id: string;
+    text: string;
+    severity: string;
+  } | null>(null);
 
-  const counts = useMemo(() => countBySeverity(insights), [insights]);
+  const tabBarH = 49 + Math.max(insets.bottom, 0);
+  const isRefetching = false; // refetchAll is not async here
 
   const filtered = useMemo(() => {
-    let list = insights;
-    if (severityFilter !== 'all') list = list.filter((i) => i.severity === severityFilter);
-    if (categoryFilter !== 'all') list = list.filter((i) => i.healthCategory === categoryFilter);
-    return sortInsights(list);
-  }, [insights, severityFilter, categoryFilter]);
+    if (activeFilter === 'all') return insights;
+    if (activeFilter === 'predictive') return insights.filter((i) => i.category === 'Predictive');
+    return insights.filter((i) => i.severity === activeFilter);
+  }, [insights, activeFilter]);
 
-  const isFiltered = severityFilter !== 'all' || categoryFilter !== 'all';
+  const criticalCount = useMemo(() => insights.filter((i) => i.severity === 'critical').length, [insights]);
+  const highCount = useMemo(() => insights.filter((i) => i.severity === 'high').length, [insights]);
 
-  const handleMarkAllRead = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    markAllRead();
-  }, [markAllRead]);
+  const sparkValues = useMemo(() => [3, 5, 4, 7, 5, 6, insights.length], [insights.length]);
 
-  const clearFilters = useCallback(() => {
-    setSeverityFilter('all');
-    setCategoryFilter('all');
-  }, []);
+  const lastChecked = insights.length > 0
+    ? format(new Date(Math.max(...insights.map((i) => new Date(i.createdAt).getTime()))), 'h:mm a')
+    : 'N/A';
+
+  const headerSubtitle = unreadCount > 0 ? `${unreadCount} unread` : 'All read';
+
+  const headerSubColor = criticalCount > 0
+    ? Colors.critical
+    : unreadCount > 0
+    ? Colors.alert
+    : Colors.vital;
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 16 }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Insights</Text>
-          {unreadCount > 0 ? (
-            <Text style={[styles.headerSub, { color: Colors.critical }]}>
-              {unreadCount} unread
-            </Text>
-          ) : (
-            <Text style={[styles.headerSub, { color: Colors.positive }]}>All caught up</Text>
-          )}
-        </View>
-        {unreadCount > 0 && (
-          <TouchableOpacity onPress={handleMarkAllRead} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.markAllBtn}>Mark all read</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Filters */}
-      <SeverityFilterRow active={severityFilter} counts={counts} onChange={setSeverityFilter} />
-      <CategoryFilterRow active={categoryFilter} onChange={setCategoryFilter} />
-
-      {/* Main scroll */}
+    <View style={[styles.root, { backgroundColor: Colors.background }]}>
       <ScrollView
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingBottom: insets.bottom + 110 },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16, paddingBottom: tabBarH + 24 }]}
         showsVerticalScrollIndicator={false}
-        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={refetchAll}
-            tintColor={Colors.electric}
-            colors={[Colors.electric]}
-            progressBackgroundColor={Colors.surface}
+            onRefresh={refetchInsights}
+            tintColor={Colors.primary}
           />
         }
       >
-        {insights.length === 0 ? (
-          <EmptyAllClear onAddData={() => setUploadOpen(true)} />
-        ) : filtered.length === 0 ? (
-          <EmptyFiltered onClear={clearFilters} />
-        ) : (
-          <>
-            {/* Summary banner */}
-            <SummaryBanner insights={insights} />
+        {/* Header */}
+        <Animated.View entering={FadeInDown.duration(280)} style={styles.header}>
+          <View>
+            <Text style={styles.title}>Insights</Text>
+            <Text style={[styles.subtitle, { color: headerSubColor }]}>{headerSubtitle}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pressable
+              onPress={() => router.push('/trends' as any)}
+              style={styles.trendsBtn}
+            >
+              <Text style={styles.trendsBtnText}>📈 Trends</Text>
+            </Pressable>
+            {unreadCount > 0 && (
+              <TouchableOpacity onPress={markAllRead} style={styles.markAllBtn}>
+                <Text style={styles.markAllText}>Mark all read</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
 
-            {/* Trend chart */}
-            <View style={styles.chartWrap}>
-              <TrendChart insights={insights} />
-            </View>
-
-            {/* Cards */}
-            {filtered.map((insight, i) => (
-              <InsightCardItem
-                key={insight.id}
-                insight={insight}
-                index={i}
-                markRead={markRead}
-                dismiss={dismiss}
+        {/* Loading state */}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            {[0, 1, 2].map((i) => (
+              <Animated.View
+                key={i}
+                entering={FadeIn.delay(i * 60).duration(300)}
+                style={styles.skeleton}
               />
             ))}
+          </View>
+        ) : insights.length === 0 ? (
+          /* Empty state */
+          <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.emptyContainer}>
+            <ShieldIcon status="clear" />
+            <Text style={styles.emptyTitle}>You're all clear</Text>
+            <Text style={styles.emptySub}>
+              Add health data to generate personalized AI insights.
+            </Text>
+          </Animated.View>
+        ) : (
+          <>
+            {/* Summary card */}
+            <View style={{ marginTop: 16 }}>
+              <SummaryCard
+                critical={criticalCount}
+                high={highCount}
+                unread={unreadCount}
+                total={insights.length}
+                lastChecked={lastChecked}
+                sparkValues={sparkValues}
+              />
+            </View>
+
+            {/* Filter chips */}
+            <Animated.View entering={FadeInDown.delay(80).duration(280)} style={{ marginTop: 16 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipsRow}
+              >
+                {FILTERS.map((f) => {
+                  const active = activeFilter === f.id;
+                  const fColor = SEV_COLOR[f.id] ?? Colors.primary;
+                  return (
+                    <TouchableOpacity
+                      key={f.id}
+                      onPress={() => setActiveFilter(f.id)}
+                      style={[styles.chip, active && { backgroundColor: fColor, borderColor: fColor }]}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[styles.chipText, active && { color: '#FFF', fontWeight: '600' }]}>
+                        {f.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </Animated.View>
+
+            {/* Insight cards */}
+            <Animated.View entering={FadeInDown.delay(140).duration(280)} style={{ marginTop: 16 }}>
+              {filtered.length === 0 ? (
+                <View style={styles.empty}>
+                  <Text style={styles.emptyTitle}>No insights match this filter.</Text>
+                  <Text style={styles.emptySub}>Try selecting a different severity.</Text>
+                </View>
+              ) : (
+                filtered.map((insight) => (
+                  <InsightCard
+                    key={insight.id}
+                    insight={insight}
+                    onDismiss={() => dismissInsight(insight.id)}
+                    onGetDoctorOpinion={(id, text, severity) =>
+                      setConsultationInsight({ id, text, severity })
+                    }
+                  />
+                ))
+              )}
+            </Animated.View>
           </>
         )}
       </ScrollView>
 
-      <UploadModal visible={uploadOpen} onClose={() => setUploadOpen(false)} />
+      <ConsultationRequestSheet
+        visible={consultationInsight !== null}
+        onClose={() => setConsultationInsight(null)}
+        insightId={consultationInsight?.id ?? ''}
+        insightText={consultationInsight?.text ?? ''}
+        severity={consultationInsight?.severity ?? 'medium'}
+      />
     </View>
   );
 }
@@ -1345,39 +739,104 @@ export default function InsightsScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.background,
+  },
+  scroll: {
+    gap: 0,
   },
   header: {
-    paddingHorizontal: Spacing[5],
-    paddingTop: Spacing[4],
-    paddingBottom: Spacing[3],
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingHorizontal: 20,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
-  headerTitle: {
-    fontSize: FontSize['2xl'],
-    fontFamily: FontFamily.displayBold,
+  title: {
+    fontSize: 34,
+    fontFamily: FontFamily.bodyBold,
+    fontWeight: '700',
     color: Colors.textPrimary,
+    letterSpacing: -0.5,
   },
-  headerSub: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bodyMedium,
+  subtitle: {
+    fontSize: 15,
+    fontFamily: FontFamily.bodyRegular,
     marginTop: 2,
   },
   markAllBtn: {
-    fontSize: FontSize.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    marginTop: 4,
+  },
+  markAllText: {
+    fontSize: 13,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textSecondary,
+  },
+  trendsBtn: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: 'rgba(76,141,255,0.10)',
+    borderRadius: 999, borderWidth: 0.5,
+    borderColor: 'rgba(76,141,255,0.25)',
+    marginTop: 4,
+  },
+  trendsBtnText: {
+    fontSize: 13, fontWeight: '500', color: '#4C8DFF',
+  },
+  chipsRow: {
+    gap: 8,
+    paddingHorizontal: 20,
+  },
+  chip: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 100,
+    height: 30,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.45)',
+  },
+  loadingContainer: {
+    marginTop: 24,
+    gap: 10,
+    paddingHorizontal: 20,
+  },
+  skeleton: {
+    height: 80,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 14,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 80,
+    gap: 12,
+    paddingHorizontal: 32,
+  },
+  empty: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 8,
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 17,
     fontFamily: FontFamily.bodyMedium,
-    color: Colors.primary,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
-  scroll: {
-    paddingTop: Spacing[4],
-    paddingHorizontal: Spacing[4],
-  },
-  chartWrap: {
-    marginBottom: Spacing[2],
+  emptySub: {
+    fontSize: 15,
+    fontFamily: FontFamily.bodyRegular,
+    color: Colors.textTertiary,
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });
-

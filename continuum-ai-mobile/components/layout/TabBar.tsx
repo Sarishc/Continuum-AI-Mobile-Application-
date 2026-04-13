@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,24 +14,22 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { hapticImpact } from '@/utils/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { Colors } from '../../constants/colors';
-import { FontFamily, FontSize } from '../../constants/typography';
-import { useHealthStore } from '../../store/healthStore';
+import { FontFamily } from '../../constants/typography';
+import { useInsights } from '../../hooks/useInsights';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const BAR_WIDTH = SCREEN_WIDTH - 32;
-const BAR_HEIGHT = 64;
-const TAB_COUNT = 5;
-const INDICATOR_SIZE = 40;
-const TAB_WIDTH = BAR_WIDTH / TAB_COUNT;
+const PHONE_W = Math.min(SCREEN_WIDTH, 430);
+const TAB_BAR_HEIGHT = 49;
 
-// ─── SVG Icons ────────────────────────────────────────────────────────────────
+// ─── SVG Icons (SF Symbols aesthetic) ────────────────────────────────────────
 
 function HomeIcon({ color, filled }: { color: string; filled?: boolean }) {
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
       {filled ? (
         <Path
           d="M3 9.5L12 3L21 9.5V20C21 20.5523 20.5523 21 20 21H15V15H9V21H4C3.44772 21 3 20.5523 3 20V9.5Z"
@@ -52,53 +50,57 @@ function HomeIcon({ color, filled }: { color: string; filled?: boolean }) {
 
 function ChatIcon({ color, filled }: { color: string; filled?: boolean }) {
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
       {filled ? (
-        <>
-          <Path
-            d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z"
-            fill={color}
-          />
-          <Path d="M8 9L8.5 7.5L9 9L10.5 9.5L9 10L8.5 11.5L8 10L6.5 9.5L8 9Z" fill="#fff" opacity={0.9} />
-        </>
+        <Path
+          d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z"
+          fill={color}
+        />
       ) : (
-        <>
-          <Path
-            d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z"
-            stroke={color}
-            strokeWidth={1.8}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <Path d="M8.5 8L9 6.5L9.5 8L11 8.5L9.5 9L9 10.5L8.5 9L7 8.5L8.5 8Z" stroke={color} strokeWidth={1} strokeLinejoin="round" />
-        </>
+        <Path
+          d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z"
+          stroke={color}
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       )}
     </Svg>
   );
 }
 
-function TimelineIcon({ color, filled }: { color: string; filled?: boolean }) {
+function MedsIcon({ color, filled }: { color: string; filled?: boolean }) {
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+      {/* Pill capsule shape */}
       <Path
-        d="M12 4V20"
+        d="M9 3C6.239 3 4 5.239 4 8v8c0 2.761 2.239 5 5 5h6c2.761 0 5-2.239 5-5V8c0-2.761-2.239-5-5-5H9z"
         stroke={color}
-        strokeWidth={1.5}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill={filled ? color + '30' : 'none'}
+      />
+      <Path
+        d="M4 12h16"
+        stroke={color}
+        strokeWidth={1.8}
         strokeLinecap="round"
       />
-      <Circle cx="12" cy="6" r={filled ? 3 : 2.5} fill={filled ? color : 'none'} stroke={color} strokeWidth={1.8} />
-      <Circle cx="12" cy="12" r={filled ? 3 : 2.5} fill={filled ? color : 'none'} stroke={color} strokeWidth={1.8} />
-      <Circle cx="12" cy="18" r={filled ? 3 : 2.5} fill={filled ? color : 'none'} stroke={color} strokeWidth={1.8} />
-      <Path d="M15 6H19" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-      <Path d="M9 12H5" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-      <Path d="M15 18H19" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      {filled && (
+        <Path
+          d="M4 12C4 9.239 6.239 7 9 7h6c2.761 0 5 2.239 5 5H4z"
+          fill={color}
+          opacity={0.8}
+        />
+      )}
     </Svg>
   );
 }
 
 function InsightsIcon({ color, filled }: { color: string; filled?: boolean }) {
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
       {filled ? (
         <Path
           d="M13 2L4.5 13.5H11L10 22L20.5 10H14L13 2Z"
@@ -121,34 +123,24 @@ function InsightsIcon({ color, filled }: { color: string; filled?: boolean }) {
 
 function ProfileIcon({ color, filled }: { color: string; filled?: boolean }) {
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
       {filled ? (
         <>
           <Circle cx="12" cy="8" r="4" fill={color} />
-          <Path
-            d="M4 20C4 17 7.58172 14 12 14C16.4183 14 20 17 20 20"
-            stroke={color}
-            strokeWidth={2.2}
-            strokeLinecap="round"
-          />
+          <Path d="M4 20C4 17 7.58172 14 12 14C16.4183 14 20 17 20 20" stroke={color} strokeWidth={2} strokeLinecap="round" />
         </>
       ) : (
         <>
           <Circle cx="12" cy="8" r="4" stroke={color} strokeWidth={1.8} />
-          <Path
-            d="M4 20C4 17 7.58172 14 12 14C16.4183 14 20 17 20 20"
-            stroke={color}
-            strokeWidth={1.8}
-            strokeLinecap="round"
-          />
+          <Path d="M4 20C4 17 7.58172 14 12 14C16.4183 14 20 17 20 20" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
         </>
       )}
     </Svg>
   );
 }
 
-const TAB_ICONS = [HomeIcon, ChatIcon, TimelineIcon, InsightsIcon, ProfileIcon];
-const TAB_LABELS = ['Home', 'Chat', 'Timeline', 'Insights', 'Profile'];
+const TAB_ICONS = [HomeIcon, ChatIcon, MedsIcon, InsightsIcon, ProfileIcon];
+const TAB_LABELS = ['Home', 'Chat', 'Meds', 'Insights', 'Profile'];
 
 // ─── Tab Item ─────────────────────────────────────────────────────────────────
 
@@ -169,13 +161,15 @@ function TabItem({ Icon, label, isFocused, onPress, badge }: TabItemProps) {
 
   const handlePress = useCallback(() => {
     scale.value = withSpring(0.82, { damping: 12, stiffness: 400 }, () => {
-      scale.value = withSpring(1, { damping: 14, stiffness: 300 });
+      scale.value = withSpring(1, { damping: 14, stiffness: 280 });
     });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     onPress();
   }, [onPress]);
 
-  const iconColor = isFocused ? Colors.electric : Colors.textMuted;
+  const activeColor = Colors.primary;   // #4C8DFF
+  const inactiveColor = Colors.textTertiary; // rgba(255,255,255,0.30)
+  const iconColor = isFocused ? activeColor : inactiveColor;
 
   return (
     <TouchableOpacity
@@ -195,9 +189,7 @@ function TabItem({ Icon, label, isFocused, onPress, badge }: TabItemProps) {
             </View>
           )}
         </View>
-        {isFocused && (
-          <Text style={styles.tabLabel}>{label}</Text>
-        )}
+        <Text style={[styles.tabLabel, { color: iconColor }]}>{label}</Text>
       </Animated.View>
     </TouchableOpacity>
   );
@@ -207,63 +199,47 @@ function TabItem({ Icon, label, isFocused, onPress, badge }: TabItemProps) {
 
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const indicatorX = useSharedValue(state.index * TAB_WIDTH + (TAB_WIDTH - INDICATOR_SIZE) / 2);
-  const insights = useHealthStore((s) => s.insights);
-  const unreadCount = useMemo(() => insights.filter((i) => !i.is_read && !i.dismissed).length, [insights]);
+  const { unreadCount } = useInsights();
 
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: indicatorX.value }],
-  }));
+  const bottomPad = Math.max(insets.bottom, 0);
 
   return (
-    <View
-      style={[
-        styles.container,
-        { paddingBottom: Math.max(insets.bottom, 12) },
-      ]}
-      pointerEvents="box-none"
-    >
-      {/* Outer shadow wrapper */}
-      <View style={styles.shadowWrap}>
-        <View style={styles.pill}>
-          {/* Sliding active indicator */}
-          <Animated.View style={[styles.indicator, indicatorStyle]} pointerEvents="none" />
+    <View style={[styles.container, { paddingBottom: bottomPad }]}>
+      {/* Top hairline border */}
+      <View style={styles.topBorder} />
 
-          {state.routes.map((route, index) => {
-            const isFocused = state.index === index;
-            const Icon = TAB_ICONS[index];
-            const label = TAB_LABELS[index];
+      {/* Tab row */}
+      <View style={styles.row}>
+        {state.routes.map((route, index) => {
+          const isFocused = state.index === index;
+          const Icon = TAB_ICONS[index];
+          const label = TAB_LABELS[index];
+          const badge = index === 3 ? unreadCount : undefined;
+          // Skip hidden tabs (href: null) that don't have a corresponding icon
+          if (!Icon) return null;
 
-            const onPress = () => {
-              indicatorX.value = withSpring(
-                index * TAB_WIDTH + (TAB_WIDTH - INDICATOR_SIZE) / 2,
-                { damping: 20, stiffness: 300 }
-              );
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            };
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
 
-            // index 3 = Insights tab
-            const badge = index === 3 ? unreadCount : undefined;
-
-            return (
-              <TabItem
-                key={route.key}
-                Icon={Icon}
-                label={label}
-                isFocused={isFocused}
-                onPress={onPress}
-                badge={badge}
-              />
-            );
-          })}
-        </View>
+          return (
+            <TabItem
+              key={route.key}
+              Icon={Icon}
+              label={label}
+              isFocused={isFocused}
+              onPress={onPress}
+              badge={badge}
+            />
+          );
+        })}
       </View>
     </View>
   );
@@ -271,52 +247,36 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    pointerEvents: 'box-none',
-  } as any,
-  shadowWrap: {
-    borderRadius: 32,
+    backgroundColor: 'rgba(0,0,0,0.88)',
     ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.55,
-        shadowRadius: 24,
+      web: {
+        position: 'fixed' as const,
+        bottom: 0,
+        left: '50%',
+        width: PHONE_W,
+        transform: [{ translateX: -(PHONE_W / 2) }],
+        zIndex: 9999,
+      } as any,
+      default: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
       },
-      android: { elevation: 16 },
     }),
   },
-  pill: {
-    flexDirection: 'row',
-    backgroundColor: Colors.elevated,
-    borderRadius: 32,
-    borderWidth: 1,
-    borderColor: Colors.rim,
-    height: BAR_HEIGHT,
-    alignItems: 'center',
-    overflow: 'hidden',
-    // Top highlight line
-    borderTopColor: 'rgba(255,255,255,0.06)',
+  topBorder: {
+    height: 0.5,
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
-  indicator: {
-    position: 'absolute',
-    top: (BAR_HEIGHT - INDICATOR_SIZE) / 2,
-    left: 0,
-    width: INDICATOR_SIZE,
-    height: INDICATOR_SIZE,
-    borderRadius: 14,
-    backgroundColor: Colors.electricMist,
-    borderWidth: 1,
-    borderColor: 'rgba(79,126,255,0.2)',
+  row: {
+    flexDirection: 'row',
+    height: TAB_BAR_HEIGHT,
+    alignItems: 'center',
   },
   tabItem: {
-    width: TAB_WIDTH,
-    height: BAR_HEIGHT,
+    flex: 1,
+    height: TAB_BAR_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -327,14 +287,14 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 10,
-    fontFamily: FontFamily.displayMedium,
-    color: Colors.electric,
-    letterSpacing: 0.2,
+    fontFamily: FontFamily.bodyMedium,
+    fontWeight: '500',
+    letterSpacing: 0.1,
   },
   badge: {
     position: 'absolute',
     top: -4,
-    right: -6,
+    right: -7,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -343,11 +303,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 3,
     borderWidth: 1.5,
-    borderColor: Colors.elevated,
+    borderColor: 'rgba(8,8,8,0.92)',
   },
   badgeText: {
     fontSize: 9,
-    fontFamily: FontFamily.displayBold,
+    fontFamily: FontFamily.bodyBold,
     color: '#FFFFFF',
     lineHeight: 11,
   },
